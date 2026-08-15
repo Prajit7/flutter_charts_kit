@@ -2,53 +2,39 @@
 
 ## 0.0.1
 
-- Fixed a crash in `BarChart2D`'s drag-to-zoom: dragging a selection that ended at or near the right edge of the plot could throw a `RangeError` (array index clamped to an invalid bound).
-- Fixed the drag-to-zoom selection overlay showing as a thin sliver instead of a full-height band on x-only zoom (`LineChart2D`, `BarChart2D`, and `ScatterChart2D` when explicitly set to `ChartZoomMode.x`).
-- Fixed `LineChart2D`'s y-axis staying anchored at zero even while zoomed, which made zooming into a narrow x-range look like it barely zoomed at all. Y now tightly fits the visible slice (with padding) once zoomed, and still anchors at zero for the default unzoomed view.
-
-## 0.0.1
-
-- Zoom is now available on every chart, adapted to what makes sense for each one:
-  - `BarChart2D`: drag horizontally to zoom into a range of categories (y auto-rescales); `zoomMode: ChartZoomMode.xy` also zooms the dragged rectangle's y-range.
-  - `PieChart2D`: no axes to drag-select, so it's pinch/scroll-to-zoom + drag-to-pan instead (like a photo viewer), with the same reset-button pattern.
-  - `Surface3DChart`: single-finger drag still rotates; two-finger pinch now zooms (previously only desktop scroll-wheel could zoom — touch users had no way to zoom in).
-- All zoom interactions across every chart share the same reset-button UX: it only appears while zoomed, and restores the exact original view.
-
-## 0.5.0
-
-- **Breaking (internal only, no API change):** all interaction state (hover, legend visibility, rotation/zoom, drag-zoom) across every chart — `Surface3DChart`, `LineChart2D`, `BarChart2D`, `PieChart2D`, `ScatterChart2D` — now lives in `ValueNotifier`s instead of `setState()`. Pointer movement now only repaints the canvas/tooltip subtree, not the legend or header.
-- Added drag-to-zoom on `LineChart2D` (x-axis by default, y auto-rescales — `zoomMode: ChartZoomMode.x`) and `ScatterChart2D` (both axes by default — `zoomMode: ChartZoomMode.xy`). Drag a rectangle over the plot; a reset button appears while zoomed and restores the full view. Set `zoomMode: ChartZoomMode.none` to disable.
-- `Surface3DChartState.zoom`/`rotationX`/`rotationY` are now getters (still readable the same way) backed by the new `Surface3DViewState`.
+- **Initial release** of `flutter_charts_kit`.
+- Added `Surface3DChart` with drag-to-rotate, scroll/pinch-to-zoom, hover/tap tooltips, and calibrated color gradients.
+- Added automatic color scaling from chart data, with optional `fixedMin`/`fixedMax` bounds.
+- Added optional vertical reference line using `referenceColIndex` and `referenceLabel`.
+- Added `Surface3DChartController` for external reset control.
+- Added custom tooltip support through `tooltipBuilder`.
+- Added `Surface3DLegend`: a standalone color-scale legend with gradient bar and tick labels.
+- Added configurable surface chart legend options:
+  - `showLegend`
+  - `legendAlignment`
+  - `legendTitle`
+  - `legendOrientation`
+- Added `LineChart2D` with multi-series support, optional area fill, hover tooltips, and toggleable legend.
+- Added `BarChart2D` with grouped or stacked columns, multi-series support, and hover tooltips.
+- Added `PieChart2D` with pie/donut modes, hover highlighting, and percentage labels.
+- Added `ScatterChart2D` with multi-series support and optional per-point bubble sizing.
+- Added shared `Chart2DLegend` and `Cartesian2DAxes` components.
+- Added chart models including `ChartPoint`, `XySeries`, `CategorySeries`, `PieSlice`, and `LegendEntry`.
+- Added `ChartTheme` and `ChartThemeScope` for centralized chart styling, including the built-in `ChartTheme.dark`.
+- Added `title` and `subtitle` support with the shared `ChartHeader`.
+- Added automatic `ChartEmptyState` for empty chart data.
+- Added entrance animations for line, bar, pie/donut, and scatter charts.
+- Added crosshair support for `LineChart2D` and `ScatterChart2D`.
+- Added tap and hover callbacks for line, scatter, bar, and pie charts.
+- Added zoom interactions across supported charts:
+  - `BarChart2D`: horizontal category zoom with automatic Y-axis rescaling.
+  - `LineChart2D`: X-axis zoom with automatic Y-axis rescaling.
+  - `ScatterChart2D`: XY drag-to-zoom.
+  - `PieChart2D`: pinch/scroll-to-zoom and drag-to-pan.
+  - `Surface3DChart`: two-finger pinch-to-zoom on touch devices.
+- Added a consistent reset-button UX for zoomed charts.
+- **Performance improvement:** moved chart interaction state to `ValueNotifier`s instead of `setState()`, reducing unnecessary widget rebuilds during pointer interaction.
 - Added widget tests covering empty states, legend toggling, and drag-to-zoom.
-
-## 0.4.0
-
-- Added `ChartTheme` + `ChartThemeScope`: central styling (grid, axis, tooltip, title colors and fonts) for all 2D charts, including a built-in `ChartTheme.dark`.
-- Added `title`/`subtitle` props and a shared `ChartHeader` to `LineChart2D`, `BarChart2D`, `PieChart2D`, `ScatterChart2D`.
-- Added automatic `ChartEmptyState` when a chart's data/series/slices are empty.
-- Added entrance animations: line draw-in, bars growing from baseline, pie/donut radial grow-in, scatter pop-in. Controlled via `enableAnimation`/`animationDuration`, replays when series data changes.
-- Added a crosshair (`showCrosshair`) on `LineChart2D` and `ScatterChart2D` that follows the hovered point.
-- Added tap/hover callbacks: `onPointHover`/`onPointTap` (line, scatter), `onBarHover`/`onBarTap` (bar), `onSliceHover`/`onSliceTap` (pie).
-
-## 0.3.0
-
-- Added `LineChart2D` — multi-series, optional area fill, hover tooltips, toggleable legend.
-- Added `BarChart2D` — grouped or stacked columns, multi-series, hover tooltips.
-- Added `PieChart2D` — pie or donut (`innerRadiusRatio`), hover highlight + percentage labels.
-- Added `ScatterChart2D` — multi-series scatter, optional per-point bubble sizing.
-- Added shared `Chart2DLegend` (click-to-toggle series/slice visibility) and `Cartesian2DAxes` (shared axis/grid math for line/bar/scatter).
-- New models: `ChartPoint`, `XySeries`, `CategorySeries`, `PieSlice`, `LegendEntry`.
-
-## 0.2.0
-
-- Added `Surface3DLegend`: a standalone color-scale legend (gradient bar + tick labels), usable on its own or embedded automatically in `Surface3DChart` via `showLegend: true`.
-- New `Surface3DChart` params: `showLegend`, `legendAlignment`, `legendTitle`, `legendOrientation`.
-
-## 0.1.0
-
-- Initial release.
-- `Surface3DChart` widget: drag-to-rotate, scroll/pinch-to-zoom, hover/tap tooltips.
-- Calibrated color gradients via `fixedMin`/`fixedMax`, or auto-scaling from data.
-- Optional vertical reference line (`referenceColIndex`/`referenceLabel`).
-- `Surface3DChartController` for external reset control.
-- Custom tooltip support via `tooltipBuilder`.
+- Fixed a `RangeError` in `BarChart2D` drag-to-zoom when a selection ended at or near the right edge of the plot.
+- Fixed the x-only drag-to-zoom selection overlay appearing as a thin sliver instead of a full-height selection band.
+- Fixed `LineChart2D` Y-axis scaling while zoomed so the visible data range is tightly fitted with padding.
