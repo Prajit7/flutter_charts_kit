@@ -1,6 +1,6 @@
 name: surface_3d_chart
 description: A generic, interactive 3D surface chart widget for Flutter — rotate, zoom, hover/tap tooltips, calibrated color gradients.
-version: 0.6.1
+version: 0.0.1
 homepage: https://github.com/prajit7/surface_3d_chart
 repository: https://github.com/prajit7/surface_3d_chart
 issue_tracker: https://github.com/prajit7/surface_3d_chart/issues
