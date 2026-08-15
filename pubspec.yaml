@@ -6,7 +6,7 @@ repository: https://github.com/prajit7/flutter_charts_kit
 issue_tracker: https://github.com/prajit7/flutter_charts_kit/issues
 topics:
   - chart
-  - 3d
+  - three-dimensional
   - visualization
   - widgets
 
