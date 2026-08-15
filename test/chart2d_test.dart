@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:surface_3d_chart/surface_3d_chart.dart';
+import 'package:flutter_charts_kit/flutter_charts_kit.dart';
 
 void main() {
   final sampleSeries = [
@@ -79,14 +79,14 @@ void main() {
 
   testWidgets('BarChart2D renders and legend toggles a series', (tester) async {
     await tester.pumpWidget(
-      MaterialApp(
+      const MaterialApp(
         home: Scaffold(
           body: SizedBox(
             width: 400,
             height: 300,
             child: BarChart2D(
-              categories: const ['Jan', 'Feb', 'Mar'],
-              series: const [
+              categories: ['Jan', 'Feb', 'Mar'],
+              series: [
                 CategorySeries(name: 'A', color: Colors.blue, values: [1, 2, 3]),
                 CategorySeries(name: 'B', color: Colors.red, values: [3, 2, 1]),
               ],
@@ -108,13 +108,13 @@ void main() {
 
   testWidgets('PieChart2D renders and shows tooltip on tap', (tester) async {
     await tester.pumpWidget(
-      MaterialApp(
+      const MaterialApp(
         home: Scaffold(
           body: SizedBox(
             width: 300,
             height: 300,
             child: PieChart2D(
-              slices: const [
+              slices: [
                 PieSlice(label: 'X', value: 60, color: Colors.blue),
                 PieSlice(label: 'Y', value: 40, color: Colors.orange),
               ],

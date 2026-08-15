@@ -1,4 +1,4 @@
-# surface_3d_chart
+# flutter_charts_kit
 
 A generic, interactive 3D surface chart for Flutter. Rotate by dragging,
 zoom by scrolling/pinching, hover or tap any tile for a tooltip. It knows
@@ -11,14 +11,14 @@ Local package (not yet published):
 
 ```yaml
 dependencies:
-  surface_3d_chart:
-    path: ../surface_3d_chart
+  flutter_charts_kit:
+    path: ../flutter_charts_kit
 ```
 
 ## Usage
 
 ```dart
-import 'package:surface_3d_chart/surface_3d_chart.dart';
+import 'package:flutter_charts_kit/flutter_charts_kit.dart';
 
 Surface3DChart(
   data: [

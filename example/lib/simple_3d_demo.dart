@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:surface_3d_chart/surface_3d_chart.dart';
+import 'package:flutter_charts_kit/flutter_charts_kit.dart';
 
 // The simplest possible use of Surface3DChart: hardcoded data, no
 // networking, no state management beyond what the widget handles itself.

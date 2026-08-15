@@ -1,5 +1,5 @@
 /// A generic, interactive 3D surface chart for Flutter.
-library surface_3d_chart;
+library flutter_charts_kit;
 
 export 'src/surface_3d_chart_widget.dart'
     show Surface3DChart, Surface3DChartState, Surface3DHit, Surface3DViewState;
