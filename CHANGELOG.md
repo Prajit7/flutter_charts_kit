@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.6.1
+## 0.0.1
 
 - Fixed a crash in `BarChart2D`'s drag-to-zoom: dragging a selection that ended at or near the right edge of the plot could throw a `RangeError` (array index clamped to an invalid bound).
 - Fixed the drag-to-zoom selection overlay showing as a thin sliver instead of a full-height band on x-only zoom (`LineChart2D`, `BarChart2D`, and `ScatterChart2D` when explicitly set to `ChartZoomMode.x`).

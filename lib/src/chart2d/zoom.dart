@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 
 /// Which axes a drag-to-zoom selection affects.
 enum ChartZoomMode {
