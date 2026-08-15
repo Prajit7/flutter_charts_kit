@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.0.3
+
+- Updated the example application to showcase both 2D and 3D charts in a unified demo.
+- Added tab-based navigation between the 2D chart collection and `Surface3DChart`.
+- Added a combined 2D charts showcase including:
+  - `LineChart2D`
+  - `BarChart2D` (grouped and stacked)
+  - `PieChart2D`
+  - `PieChart2D` donut mode
+  - `ScatterChart2D`
+- Added a dedicated `Surface3DChart` example with sample region/month sales data.
+- Added light/dark theme switching to the example application.
+- Updated the example application branding to `Flutter Charts Kit`.
+- Renamed the package from `surface_3d_chart` to `flutter_charts_kit`.
+- Updated package imports and example references to use `flutter_charts_kit`.
+- Updated the example configuration to enable Material Design icons.
+- Improved the example app layout to make the available 2D and 3D chart types easier to discover.
+
+## 0.0.2
+
+- Added zoom interactions across all supported chart types.
+- Added drag-to-zoom support for `LineChart2D`.
+- Added horizontal category zoom support for `BarChart2D`.
+- Added XY drag-to-zoom support for `ScatterChart2D`.
+- Added pinch/scroll-to-zoom and drag-to-pan support for `PieChart2D`.
+- Added two-finger pinch-to-zoom support for `Surface3DChart` on touch devices.
+- Added a consistent reset-button experience for zoomed charts.
+- Improved `LineChart2D` Y-axis scaling while zoomed so the visible data range is fitted with padding.
+- Fixed a `RangeError` in `BarChart2D` drag-to-zoom when the selection ended at or near the right edge of the plot.
+- Fixed the x-only drag-to-zoom selection overlay appearing as a thin sliver instead of a full-height selection band.
+- Improved chart interaction performance by moving interaction state to `ValueNotifier`s instead of `setState()`.
+- Added widget tests covering empty states, legend toggling, and drag-to-zoom.
+
 ## 0.0.1
 
 - **Initial release** of `flutter_charts_kit`.
@@ -26,15 +59,3 @@
 - Added entrance animations for line, bar, pie/donut, and scatter charts.
 - Added crosshair support for `LineChart2D` and `ScatterChart2D`.
 - Added tap and hover callbacks for line, scatter, bar, and pie charts.
-- Added zoom interactions across supported charts:
-  - `BarChart2D`: horizontal category zoom with automatic Y-axis rescaling.
-  - `LineChart2D`: X-axis zoom with automatic Y-axis rescaling.
-  - `ScatterChart2D`: XY drag-to-zoom.
-  - `PieChart2D`: pinch/scroll-to-zoom and drag-to-pan.
-  - `Surface3DChart`: two-finger pinch-to-zoom on touch devices.
-- Added a consistent reset-button UX for zoomed charts.
-- **Performance improvement:** moved chart interaction state to `ValueNotifier`s instead of `setState()`, reducing unnecessary widget rebuilds during pointer interaction.
-- Added widget tests covering empty states, legend toggling, and drag-to-zoom.
-- Fixed a `RangeError` in `BarChart2D` drag-to-zoom when a selection ended at or near the right edge of the plot.
-- Fixed the x-only drag-to-zoom selection overlay appearing as a thin sliver instead of a full-height selection band.
-- Fixed `LineChart2D` Y-axis scaling while zoomed so the visible data range is tightly fitted with padding.

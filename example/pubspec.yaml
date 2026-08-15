@@ -1,5 +1,5 @@
 name: surface_3d_chart_example
-description: Example app showing options Greeks built on the flutter_charts_kit package.
+description: Example app showing 2D and 3D charts built with the flutter_charts_kit package.
 publish_to: none
 version: 1.0.0
 
@@ -12,6 +12,6 @@ dependencies:
     sdk: flutter
   flutter_charts_kit:
     path: ../
-  # http: ^1.2.0  # uncomment when you wire up ApiOptionsRepository
 
 flutter:
+  uses-material-design: true

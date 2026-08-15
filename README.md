@@ -7,12 +7,10 @@ labels, a color gradient, and a value formatter.
 
 ## Install
 
-Local package (not yet published):
 
 ```yaml
 dependencies:
-  flutter_charts_kit:
-    path: ../flutter_charts_kit
+  flutter_charts_kit: 0.0.3
 ```
 
 ## Usage
