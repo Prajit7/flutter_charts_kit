@@ -6,7 +6,7 @@
 - Fixed the drag-to-zoom selection overlay showing as a thin sliver instead of a full-height band on x-only zoom (`LineChart2D`, `BarChart2D`, and `ScatterChart2D` when explicitly set to `ChartZoomMode.x`).
 - Fixed `LineChart2D`'s y-axis staying anchored at zero even while zoomed, which made zooming into a narrow x-range look like it barely zoomed at all. Y now tightly fits the visible slice (with padding) once zoomed, and still anchors at zero for the default unzoomed view.
 
-## 0.6.0
+## 0.0.1
 
 - Zoom is now available on every chart, adapted to what makes sense for each one:
   - `BarChart2D`: drag horizontally to zoom into a range of categories (y auto-rescales); `zoomMode: ChartZoomMode.xy` also zooms the dragged rectangle's y-range.
