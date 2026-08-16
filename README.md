@@ -10,7 +10,7 @@ labels, a color gradient, and a value formatter.
 
 ```yaml
 dependencies:
-  flutter_charts_kit: 0.0.3
+  flutter_charts_kit: 0.0.4
 ```
 ## Demo
 
