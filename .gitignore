@@ -1,9 +1,7 @@
 .dart_tool/
 .packages
-build/
 pubspec.lock
 *.iml
 .idea/
 .vscode/
-example/build/
 example/.dart_tool/
