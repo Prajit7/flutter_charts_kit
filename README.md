@@ -273,6 +273,15 @@ ScatterChart2D(onPointHover: ..., onPointTap: ...);
 
 `LineChart2D` and `ScatterChart2D` also show a crosshair through the
 hovered point by default (`showCrosshair: false` to disable).
+## Demo
+
+🚀 **[Live Demo](https://flutter-charts-kit-gap4-flame.vercel.app/)**
+
+📦 **[pub.dev](https://pub.dev/packages/flutter_charts_kit)**
+
+💻 **[GitHub](https://github.com/Prajit7/flutter_charts_kit)**
+
+
 ## Screenshots
 
 ### 2D Charts
