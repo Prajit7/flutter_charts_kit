@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.0.4
+
+- Updated the example application to showcase both 2D and 3D charts in a unified demo with images.
+
+
 ## 0.0.3
 
 - Updated the example application to showcase both 2D and 3D charts in a unified demo.

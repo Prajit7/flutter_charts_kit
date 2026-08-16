@@ -17,19 +17,72 @@ class _ChartsDemoAppState extends State<ChartsDemoApp> {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      theme: ThemeData.light(),
-      darkTheme: ThemeData.dark(),
+
+      theme: ThemeData(
+        useMaterial3: true,
+        brightness: Brightness.light,
+        colorSchemeSeed: Colors.indigo,
+      ),
+
+      darkTheme: ThemeData(
+        useMaterial3: true,
+        brightness: Brightness.dark,
+        colorSchemeSeed: Colors.indigo,
+      ),
+
       themeMode: _dark ? ThemeMode.dark : ThemeMode.light,
+
       home: ChartThemeScope(
         theme: _dark ? ChartTheme.dark : ChartTheme.light,
         child: ChartsDemoScreen(
           isDark: _dark,
-          onToggleTheme: () => setState(() => _dark = !_dark),
+          onToggleTheme: () {
+            setState(() {
+              _dark = !_dark;
+            });
+          },
         ),
       ),
     );
   }
 }
+
+// ============================================================
+// RESPONSIVE HELPERS
+// ============================================================
+
+class Responsive {
+  static bool isMobile(BuildContext context) {
+    return MediaQuery.sizeOf(context).width < 600;
+  }
+
+  static bool isTablet(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
+    return width >= 600 && width < 1024;
+  }
+
+  static bool isDesktop(BuildContext context) {
+    return MediaQuery.sizeOf(context).width >= 1024;
+  }
+
+  static double horizontalPadding(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
+
+    if (width < 600) {
+      return 8;
+    }
+
+    if (width < 1024) {
+      return 16;
+    }
+
+    return 24;
+  }
+}
+
+// ============================================================
+// MAIN SCREEN
+// ============================================================
 
 class ChartsDemoScreen extends StatelessWidget {
   final bool isDark;
@@ -43,6 +96,8 @@ class ChartsDemoScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isMobile = Responsive.isMobile(context);
+
     return DefaultTabController(
       length: 2,
       child: Scaffold(
@@ -57,15 +112,15 @@ class ChartsDemoScreen extends StatelessWidget {
               onPressed: onToggleTheme,
             ),
           ],
-          bottom: const TabBar(
+          bottom: TabBar(
             tabs: [
               Tab(
-                icon: Icon(Icons.bar_chart),
-                text: '2D Charts',
+                icon: const Icon(Icons.bar_chart),
+                text: isMobile ? '2D' : '2D Charts',
               ),
               Tab(
-                icon: Icon(Icons.threed_rotation),
-                text: '3D Chart',
+                icon: const Icon(Icons.view_in_ar),
+                text: isMobile ? '3D' : '3D Chart',
               ),
             ],
           ),
@@ -90,42 +145,75 @@ class Charts2DPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isMobile = Responsive.isMobile(context);
+    final horizontalPadding =
+        Responsive.horizontalPadding(context);
+
+    final chartHeight = isMobile ? 320.0 : 280.0;
+    final pieHeight = isMobile ? 330.0 : 300.0;
+
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.symmetric(
+        horizontal: horizontalPadding,
+        vertical: 16,
+      ),
       children: [
         SizedBox(
-          height: 280,
+          height: chartHeight,
           child: _buildLineChart(),
         ),
-        const SizedBox(height: 32),
+
+        const SizedBox(height: 24),
+
         SizedBox(
-          height: 280,
-          child: _buildBarChart(stacked: false),
+          height: chartHeight,
+          child: _buildBarChart(
+            stacked: false,
+          ),
         ),
-        const SizedBox(height: 32),
+
+        const SizedBox(height: 24),
+
         SizedBox(
-          height: 280,
-          child: _buildBarChart(stacked: true),
+          height: chartHeight,
+          child: _buildBarChart(
+            stacked: true,
+          ),
         ),
-        const SizedBox(height: 32),
+
+        const SizedBox(height: 24),
+
         SizedBox(
-          height: 300,
-          child: _buildPieChart(donut: false),
+          height: pieHeight,
+          child: _buildPieChart(
+            donut: false,
+          ),
         ),
-        const SizedBox(height: 32),
+
+        const SizedBox(height: 24),
+
         SizedBox(
-          height: 300,
-          child: _buildPieChart(donut: true),
+          height: pieHeight,
+          child: _buildPieChart(
+            donut: true,
+          ),
         ),
-        const SizedBox(height: 32),
+
+        const SizedBox(height: 24),
+
         SizedBox(
-          height: 300,
+          height: chartHeight,
           child: _buildScatterChart(),
         ),
-        const SizedBox(height: 32),
+
+        const SizedBox(height: 24),
       ],
     );
   }
+
+  // ==========================================================
+  // LINE CHART
+  // ==========================================================
 
   Widget _buildLineChart() {
     return LineChart2D(
@@ -133,6 +221,7 @@ class Charts2DPage extends StatelessWidget {
       subtitle:
           'Revenue vs. costs, in thousands USD — drag to zoom, reset button to undo',
       filled: true,
+
       onPointTap: (series, point) {
         if (point != null) {
           debugPrint(
@@ -140,80 +229,183 @@ class Charts2DPage extends StatelessWidget {
           );
         }
       },
+
       series: [
         XySeries(
           name: 'Revenue',
           color: Colors.indigo,
           data: const [
-            ChartPoint(x: 1, y: 120, label: 'Jan'),
-            ChartPoint(x: 2, y: 180, label: 'Feb'),
-            ChartPoint(x: 3, y: 150, label: 'Mar'),
-            ChartPoint(x: 4, y: 220, label: 'Apr'),
-            ChartPoint(x: 5, y: 260, label: 'May'),
-            ChartPoint(x: 6, y: 240, label: 'Jun'),
+            ChartPoint(
+              x: 1,
+              y: 120,
+              label: 'Jan',
+            ),
+            ChartPoint(
+              x: 2,
+              y: 180,
+              label: 'Feb',
+            ),
+            ChartPoint(
+              x: 3,
+              y: 150,
+              label: 'Mar',
+            ),
+            ChartPoint(
+              x: 4,
+              y: 220,
+              label: 'Apr',
+            ),
+            ChartPoint(
+              x: 5,
+              y: 260,
+              label: 'May',
+            ),
+            ChartPoint(
+              x: 6,
+              y: 240,
+              label: 'Jun',
+            ),
           ],
         ),
+
         XySeries(
           name: 'Costs',
           color: Colors.redAccent,
           data: const [
-            ChartPoint(x: 1, y: 80, label: 'Jan'),
-            ChartPoint(x: 2, y: 95, label: 'Feb'),
-            ChartPoint(x: 3, y: 100, label: 'Mar'),
-            ChartPoint(x: 4, y: 110, label: 'Apr'),
-            ChartPoint(x: 5, y: 130, label: 'May'),
-            ChartPoint(x: 6, y: 125, label: 'Jun'),
+            ChartPoint(
+              x: 1,
+              y: 80,
+              label: 'Jan',
+            ),
+            ChartPoint(
+              x: 2,
+              y: 95,
+              label: 'Feb',
+            ),
+            ChartPoint(
+              x: 3,
+              y: 100,
+              label: 'Mar',
+            ),
+            ChartPoint(
+              x: 4,
+              y: 110,
+              label: 'Apr',
+            ),
+            ChartPoint(
+              x: 5,
+              y: 130,
+              label: 'May',
+            ),
+            ChartPoint(
+              x: 6,
+              y: 125,
+              label: 'Jun',
+            ),
           ],
         ),
       ],
+
       xAxisTitle: 'Month',
       yAxisTitle: 'USD (thousands)',
     );
   }
 
-  Widget _buildBarChart({required bool stacked}) {
+  // ==========================================================
+  // BAR CHART
+  // ==========================================================
+
+  Widget _buildBarChart({
+    required bool stacked,
+  }) {
     return BarChart2D(
-      title: stacked ? 'Units Sold (Stacked)' : 'Units Sold (Grouped)',
-      subtitle: 'Drag horizontally to zoom into a category range',
+      title: stacked
+          ? 'Units Sold (Stacked)'
+          : 'Units Sold (Grouped)',
+
+      subtitle:
+          'Drag horizontally to zoom into a category range',
+
       stacked: stacked,
-      onBarTap: (series, category, value) {
+
+      onBarTap: (
+        series,
+        category,
+        value,
+      ) {
         debugPrint(
           'Tapped $series/$category: $value',
         );
       },
-      categories: const ['Q1', 'Q2', 'Q3', 'Q4'],
+
+      categories: const [
+        'Q1',
+        'Q2',
+        'Q3',
+        'Q4',
+      ],
+
       series: const [
         CategorySeries(
           name: 'North',
           color: Colors.teal,
-          values: [40, 55, 48, 62],
+          values: [
+            40,
+            55,
+            48,
+            62,
+          ],
         ),
         CategorySeries(
           name: 'South',
           color: Colors.amber,
-          values: [30, 35, 42, 38],
+          values: [
+            30,
+            35,
+            42,
+            38,
+          ],
         ),
         CategorySeries(
           name: 'East',
           color: Colors.deepPurple,
-          values: [20, 28, 25, 33],
+          values: [
+            20,
+            28,
+            25,
+            33,
+          ],
         ),
       ],
+
       xAxisTitle: 'Quarter',
       yAxisTitle: 'Units sold',
     );
   }
 
-  Widget _buildPieChart({required bool donut}) {
+  // ==========================================================
+  // PIE / DONUT CHART
+  // ==========================================================
+
+  Widget _buildPieChart({
+    required bool donut,
+  }) {
     return PieChart2D(
-      title: donut ? 'Browser Share (Donut)' : 'Browser Share (Pie)',
-      subtitle: 'Pinch or scroll to zoom, drag to pan',
+      title: donut
+          ? 'Browser Share (Donut)'
+          : 'Browser Share (Pie)',
+
+      subtitle:
+          'Pinch or scroll to zoom, drag to pan',
+
       innerRadiusRatio: donut ? 0.6 : 0,
+
       onSliceTap: (slice) {
         debugPrint(
           'Tapped slice: ${slice?.label}',
         );
       },
+
       slices: const [
         PieSlice(
           label: 'Chrome',
@@ -241,14 +433,22 @@ class Charts2DPage extends StatelessWidget {
           color: Colors.grey,
         ),
       ],
-      valueFormatter: (v) => '${v.toStringAsFixed(0)}%',
+
+      valueFormatter: (v) =>
+          '${v.toStringAsFixed(0)}%',
     );
   }
+
+  // ==========================================================
+  // SCATTER CHART
+  // ==========================================================
 
   Widget _buildScatterChart() {
     return ScatterChart2D(
       title: 'Practice vs. Score',
-      subtitle: 'Drag a rectangle to zoom into both axes',
+      subtitle:
+          'Drag a rectangle to zoom into both axes',
+
       onPointTap: (series, point) {
         if (point != null) {
           debugPrint(
@@ -256,6 +456,7 @@ class Charts2DPage extends StatelessWidget {
           );
         }
       },
+
       series: [
         XySeries(
           name: 'Cohort A',
@@ -288,6 +489,7 @@ class Charts2DPage extends StatelessWidget {
             ),
           ],
         ),
+
         XySeries(
           name: 'Cohort B',
           color: Colors.pink,
@@ -315,6 +517,7 @@ class Charts2DPage extends StatelessWidget {
           ],
         ),
       ],
+
       xAxisTitle: 'Hours practiced',
       yAxisTitle: 'Score',
     );
@@ -330,6 +533,12 @@ class Surface3DPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+
+    final isMobile = size.width < 600;
+    final isTablet =
+        size.width >= 600 && size.width < 1024;
+
     const data = [
       [12.0, 18.0, 9.0, 22.0],
       [15.0, 20.0, 11.0, 25.0],
@@ -337,33 +546,68 @@ class Surface3DPage extends StatelessWidget {
       [23.0, 29.0, 17.0, 35.0],
     ];
 
-    return Scaffold(
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Surface3DChart(
-          data: data,
-          xLabels: const [
-            'North',
-            'South',
-            'East',
-            'West',
-          ],
-          yLabels: const [
-            'Jan',
-            'Feb',
-            'Mar',
-            'Apr',
-          ],
-          xAxisTitle: 'Region',
-          yAxisTitle: 'Month',
-          zAxisTitle: 'Sales',
-          valueFormatter: (v) => '\$${v.toStringAsFixed(0)}k',
-          gradient: const [
-            Colors.teal,
-            Colors.amber,
-            Colors.deepOrange,
-          ],
-          showLegend: true,
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.all(
+          isMobile
+              ? 8
+              : isTablet
+                  ? 16
+                  : 24,
+        ),
+        child: LayoutBuilder(
+          builder: (
+            context,
+            constraints,
+          ) {
+            final availableHeight =
+                constraints.maxHeight;
+
+            final chartHeight = isMobile
+                ? availableHeight * 0.75
+                : isTablet
+                    ? availableHeight * 0.82
+                    : availableHeight * 0.85;
+
+            return Center(
+              child: SizedBox(
+                width: constraints.maxWidth,
+                height: chartHeight,
+                child: Surface3DChart(
+                  data: data,
+
+                  xLabels: const [
+                    'North',
+                    'South',
+                    'East',
+                    'West',
+                  ],
+
+                  yLabels: const [
+                    'Jan',
+                    'Feb',
+                    'Mar',
+                    'Apr',
+                  ],
+
+                  xAxisTitle: 'Region',
+                  yAxisTitle: 'Month',
+                  zAxisTitle: 'Sales',
+
+                  valueFormatter: (v) =>
+                      '\$${v.toStringAsFixed(0)}k',
+
+                  gradient: const [
+                    Colors.teal,
+                    Colors.amber,
+                    Colors.deepOrange,
+                  ],
+
+                  showLegend: true,
+                ),
+              ),
+            );
+          },
         ),
       ),
     );

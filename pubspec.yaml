@@ -1,6 +1,6 @@
 name: flutter_charts_kit
 description: A generic, interactive 3D surface chart widget for Flutter — rotate, zoom, hover/tap tooltips, calibrated color gradients.
-version: 0.0.3
+version: 0.0.4
 homepage: https://github.com/prajit7/flutter_charts_kit
 repository: https://github.com/prajit7/flutter_charts_kit
 issue_tracker: https://github.com/prajit7/flutter_charts_kit/issues
