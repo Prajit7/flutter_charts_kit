@@ -1,26 +1,49 @@
-# flutter_charts_kit
+<h1 align="center">flutter_charts_kit</h1>
 
-A generic, interactive 3D surface chart for Flutter. Rotate by dragging,
-zoom by scrolling/pinching, hover or tap any tile for a tooltip. It knows
-nothing about your data's meaning — feed it a `data[row][col]` grid, axis
-labels, a color gradient, and a value formatter.
+<p align="center">
+  Interactive <b>3D surface</b> and <b>2D charts</b> (line, bar, pie/donut, scatter) for Flutter —<br>
+  zero dependencies, works on mobile, web and desktop.
+</p>
+
+<p align="center">
+  <a href="https://pub.dev/packages/flutter_charts_kit"><img src="https://img.shields.io/pub/v/flutter_charts_kit?color=0175C2&logo=dart" alt="pub version"></a>
+  <a href="https://pub.dev/packages/flutter_charts_kit/score"><img src="https://img.shields.io/pub/points/flutter_charts_kit?logo=flutter" alt="pub points"></a>
+  <a href="https://github.com/Prajit7/flutter_charts_kit/actions/workflows/ci.yml"><img src="https://github.com/Prajit7/flutter_charts_kit/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license"></a>
+</p>
+
+<p align="center">
+  <a href="https://flutter-charts-kit-gap4-flame.vercel.app/"><b>🚀 Live demo</b></a> ·
+  <a href="https://pub.dev/packages/flutter_charts_kit"><b>📦 pub.dev</b></a> ·
+  <a href="#usage"><b>📖 Usage</b></a>
+</p>
+
+<p align="center">
+  <img src="example/assets/3d.png" alt="3D surface chart" width="49%">
+  <img src="example/assets/2d.png" alt="2D charts" width="49%">
+</p>
+
+## Features
+
+| | |
+|---|---|
+| 🧊 **3D surface chart** | Drag to rotate, pinch/scroll to zoom, hover/tap tooltips, calibrated color gradients, reference line, built-in legend |
+| 📈 **Line & area** | Multi-series, crosshair, drag-to-zoom |
+| 📊 **Bar** | Grouped or stacked, category range zoom |
+| 🍩 **Pie & donut** | Hover highlight, percentage labels, pinch zoom & pan |
+| ⚬ **Scatter & bubble** | Per-point size, XY drag-to-zoom |
+| 🎨 **Theming** | `ChartThemeScope` with light/dark presets, titles, empty states, entrance animations |
+| 🪶 **No dependencies** | Pure Flutter `CustomPainter` — nothing else pulled into your app |
+
+The charts don't care what your data means — give them a grid or series,
+labels, colors and a value formatter.
 
 ## Install
 
-
 ```yaml
 dependencies:
-  flutter_charts_kit: 0.0.4
+  flutter_charts_kit: ^0.0.4
 ```
-## Demo
-
-🚀 **[Live Demo](https://flutter-charts-kit-gap4-flame.vercel.app/)**
-
-📦 **[pub.dev](https://pub.dev/packages/flutter_charts_kit)**
-
-💻 **[GitHub](https://github.com/Prajit7/flutter_charts_kit)**
-
-
 
 ## Usage
 
@@ -282,23 +305,6 @@ ScatterChart2D(onPointHover: ..., onPointTap: ...);
 
 `LineChart2D` and `ScatterChart2D` also show a crosshair through the
 hovered point by default (`showCrosshair: false` to disable).
-
-## Screenshots
-
-### 2D Charts
-
-<p align="center">
-  <img src="example/assets/2d.png" alt="Flutter Charts Kit 2D Charts" width="48%">
-  <img src="example/assets/2d1.png" alt="Flutter Charts Kit 2D Charts" width="48%">
-</p>
-
-### 3D Surface Chart
-
-<p align="center">
-  <img src="example/assets/3d.png" alt="Flutter Charts Kit 3D Surface Chart" width="70%">
-</p>
-
-
 
 ### Animations
 

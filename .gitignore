@@ -5,3 +5,5 @@ pubspec.lock
 .idea/
 .vscode/
 example/.dart_tool/
+build/
+example/build/
