@@ -13,5 +13,8 @@ dependencies:
   flutter_charts_kit:
     path: ../
 
+dev_dependencies:
+  flutter_lints: ^4.0.0
+
 flutter:
   uses-material-design: true
