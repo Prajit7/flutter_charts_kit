@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'models.dart';
@@ -111,7 +112,7 @@ class _PieChart2DState extends State<PieChart2D> with SingleTickerProviderStateM
   @override
   void didUpdateWidget(covariant PieChart2D oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.slices, widget.slices)) {
+    if (!listEquals(oldWidget.slices, widget.slices)) {
       if (widget.enableAnimation) _controller.forward(from: 0);
       _viewNotifier.value = const _PieViewState();
     }
@@ -145,17 +146,19 @@ class _PieChart2DState extends State<PieChart2D> with SingleTickerProviderStateM
       children: [
         ChartHeader(title: widget.title, subtitle: widget.subtitle),
         Expanded(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final size = Size(constraints.maxWidth, constraints.maxHeight - (widget.showLegend ? 32 : 0));
-              return ValueListenableBuilder<Set<String>>(
-                valueListenable: _hiddenNotifier,
-                builder: (context, hidden, _) {
-                  final visibleSlices = widget.slices.where((s) => !hidden.contains(s.label)).toList();
-                  return Column(
-                    children: [
-                      Expanded(
-                        child: Listener(
+          child: ValueListenableBuilder<Set<String>>(
+            valueListenable: _hiddenNotifier,
+            builder: (context, hidden, _) {
+              final visibleSlices = widget.slices.where((s) => !hidden.contains(s.label)).toList();
+              return Column(
+                children: [
+                  Expanded(
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        // Measure the plot area itself: the legend below can wrap to
+                        // several rows, so its height is not a fixed constant.
+                        final size = constraints.biggest;
+                        return Listener(
                           onPointerSignal: widget.enableZoom
                               ? (event) {
                                   if (event is PointerScrollEvent) {
@@ -233,25 +236,25 @@ class _PieChart2DState extends State<PieChart2D> with SingleTickerProviderStateM
                               ),
                             ),
                           ),
-                        ),
+                        );
+                      },
+                    ),
+                  ),
+                  if (widget.showLegend)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Chart2DLegend(
+                        entries: widget.slices.map((s) => LegendEntry(label: s.label, color: s.color)).toList(),
+                        hidden: hidden,
+                        onToggle: (label) {
+                          final next = {...hidden};
+                          next.contains(label) ? next.remove(label) : next.add(label);
+                          _hiddenNotifier.value = next;
+                          _hoveredLabelNotifier.value = null;
+                        },
                       ),
-                      if (widget.showLegend)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 6),
-                          child: Chart2DLegend(
-                            entries: widget.slices.map((s) => LegendEntry(label: s.label, color: s.color)).toList(),
-                            hidden: hidden,
-                            onToggle: (label) {
-                              final next = {...hidden};
-                              next.contains(label) ? next.remove(label) : next.add(label);
-                              _hiddenNotifier.value = next;
-                              _hoveredLabelNotifier.value = null;
-                            },
-                          ),
-                        ),
-                    ],
-                  );
-                },
+                    ),
+                ],
               );
             },
           ),

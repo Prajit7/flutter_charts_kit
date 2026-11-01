@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'models.dart';
 import 'legend.dart';
@@ -145,7 +146,7 @@ class _LineChart2DState extends State<LineChart2D> with SingleTickerProviderStat
   @override
   void didUpdateWidget(covariant LineChart2D oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.series, widget.series)) {
+    if (!listEquals(oldWidget.series, widget.series)) {
       if (widget.enableAnimation) _controller.forward(from: 0);
       _interactionNotifier.value = const _LineInteraction(); // data changed — zoom window may be stale
     }
@@ -178,17 +179,19 @@ class _LineChart2DState extends State<LineChart2D> with SingleTickerProviderStat
       children: [
         ChartHeader(title: widget.title, subtitle: widget.subtitle),
         Expanded(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final size = Size(constraints.maxWidth, constraints.maxHeight - (widget.showLegend ? 32 : 0));
-              return ValueListenableBuilder<Set<String>>(
-                valueListenable: _hiddenNotifier,
-                builder: (context, hidden, _) {
-                  final visibleSeries = widget.series.where((s) => !hidden.contains(s.name)).toList();
-                  return Column(
-                    children: [
-                      Expanded(
-                        child: MouseRegion(
+          child: ValueListenableBuilder<Set<String>>(
+            valueListenable: _hiddenNotifier,
+            builder: (context, hidden, _) {
+              final visibleSeries = widget.series.where((s) => !hidden.contains(s.name)).toList();
+              return Column(
+                children: [
+                  Expanded(
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        // Measure the plot area itself: the legend below can wrap to
+                        // several rows, so its height is not a fixed constant.
+                        final size = constraints.biggest;
+                        return MouseRegion(
                           onHover: (e) => _updateHover(e.localPosition, size, visibleSeries),
                           onExit: (_) {
                             final current = _interactionNotifier.value;
@@ -265,25 +268,25 @@ class _LineChart2DState extends State<LineChart2D> with SingleTickerProviderStat
                               },
                             ),
                           ),
-                        ),
+                        );
+                      },
+                    ),
+                  ),
+                  if (widget.showLegend)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Chart2DLegend(
+                        entries: widget.series.map((s) => LegendEntry(label: s.name, color: s.color)).toList(),
+                        hidden: hidden,
+                        onToggle: (name) {
+                          final next = {...hidden};
+                          next.contains(name) ? next.remove(name) : next.add(name);
+                          _hiddenNotifier.value = next;
+                          _interactionNotifier.value = _interactionNotifier.value.copyWith(clearHover: true);
+                        },
                       ),
-                      if (widget.showLegend)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 6),
-                          child: Chart2DLegend(
-                            entries: widget.series.map((s) => LegendEntry(label: s.name, color: s.color)).toList(),
-                            hidden: hidden,
-                            onToggle: (name) {
-                              final next = {...hidden};
-                              next.contains(name) ? next.remove(name) : next.add(name);
-                              _hiddenNotifier.value = next;
-                              _interactionNotifier.value = _interactionNotifier.value.copyWith(clearHover: true);
-                            },
-                          ),
-                        ),
-                    ],
-                  );
-                },
+                    ),
+                ],
               );
             },
           ),
@@ -403,6 +406,8 @@ class _LineChart2DState extends State<LineChart2D> with SingleTickerProviderStat
     double bestDist = 26; // px hit radius
     for (final s in visibleSeries) {
       for (final p in s.data) {
+        // points outside the zoom window aren't drawn, so they can't be hit
+        if (p.x < bounds.minX || p.x > bounds.maxX || p.y < bounds.minY || p.y > bounds.maxY) continue;
         final sp = Offset(axes.toScreenX(p.x), axes.toScreenY(p.y));
         final d = (sp - pos).distance;
         if (d < bestDist) {
@@ -628,15 +633,18 @@ class _LineChartPainter extends CustomPainter {
       final animatedLine = _truncatePath(line, progress);
 
       if (filled) {
+        // Fill down to zero, or to the plot edge when zoomed so that zero is
+        // out of view — otherwise the fill spills below the x-axis.
+        final baselineY = axes.toScreenY(0.0.clamp(bounds.minY, bounds.maxY));
         final area = Path();
-        area.moveTo(axes.toScreenX(sorted.first.x), axes.toScreenY(0));
+        area.moveTo(axes.toScreenX(sorted.first.x), baselineY);
         double lastX = axes.toScreenX(sorted.first.x);
         for (final m in animatedLine.computeMetrics()) {
           final tangent = m.getTangentForOffset(m.length);
           if (tangent != null) lastX = tangent.position.dx;
         }
         area.addPath(animatedLine, Offset.zero);
-        area.lineTo(lastX, axes.toScreenY(0));
+        area.lineTo(lastX, baselineY);
         area.close();
         canvas.drawPath(area, Paint()..color = s.color.withOpacity(0.15));
       }

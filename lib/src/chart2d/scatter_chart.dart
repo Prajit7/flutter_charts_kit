@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'models.dart';
 import 'legend.dart';
@@ -136,7 +137,7 @@ class _ScatterChart2DState extends State<ScatterChart2D> with SingleTickerProvid
   @override
   void didUpdateWidget(covariant ScatterChart2D oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.series, widget.series)) {
+    if (!listEquals(oldWidget.series, widget.series)) {
       if (widget.enableAnimation) _controller.forward(from: 0);
       _interactionNotifier.value = const _ScatterInteraction();
     }
@@ -169,17 +170,19 @@ class _ScatterChart2DState extends State<ScatterChart2D> with SingleTickerProvid
       children: [
         ChartHeader(title: widget.title, subtitle: widget.subtitle),
         Expanded(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final size = Size(constraints.maxWidth, constraints.maxHeight - (widget.showLegend ? 32 : 0));
-              return ValueListenableBuilder<Set<String>>(
-                valueListenable: _hiddenNotifier,
-                builder: (context, hidden, _) {
-                  final visibleSeries = widget.series.where((s) => !hidden.contains(s.name)).toList();
-                  return Column(
-                    children: [
-                      Expanded(
-                        child: MouseRegion(
+          child: ValueListenableBuilder<Set<String>>(
+            valueListenable: _hiddenNotifier,
+            builder: (context, hidden, _) {
+              final visibleSeries = widget.series.where((s) => !hidden.contains(s.name)).toList();
+              return Column(
+                children: [
+                  Expanded(
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        // Measure the plot area itself: the legend below can wrap to
+                        // several rows, so its height is not a fixed constant.
+                        final size = constraints.biggest;
+                        return MouseRegion(
                           onHover: (e) => _updateHover(e.localPosition, size, visibleSeries),
                           onExit: (_) {
                             final current = _interactionNotifier.value;
@@ -253,25 +256,25 @@ class _ScatterChart2DState extends State<ScatterChart2D> with SingleTickerProvid
                               },
                             ),
                           ),
-                        ),
+                        );
+                      },
+                    ),
+                  ),
+                  if (widget.showLegend)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Chart2DLegend(
+                        entries: widget.series.map((s) => LegendEntry(label: s.name, color: s.color)).toList(),
+                        hidden: hidden,
+                        onToggle: (name) {
+                          final next = {...hidden};
+                          next.contains(name) ? next.remove(name) : next.add(name);
+                          _hiddenNotifier.value = next;
+                          _interactionNotifier.value = _interactionNotifier.value.copyWith(clearHover: true);
+                        },
                       ),
-                      if (widget.showLegend)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 6),
-                          child: Chart2DLegend(
-                            entries: widget.series.map((s) => LegendEntry(label: s.name, color: s.color)).toList(),
-                            hidden: hidden,
-                            onToggle: (name) {
-                              final next = {...hidden};
-                              next.contains(name) ? next.remove(name) : next.add(name);
-                              _hiddenNotifier.value = next;
-                              _interactionNotifier.value = _interactionNotifier.value.copyWith(clearHover: true);
-                            },
-                          ),
-                        ),
-                    ],
-                  );
-                },
+                    ),
+                ],
               );
             },
           ),
@@ -318,7 +321,12 @@ class _ScatterChart2DState extends State<ScatterChart2D> with SingleTickerProvid
     _dragStartLocal = null;
     if (rect == null) return;
 
-    if (rect.width < widget.zoomDragThreshold && rect.height < widget.zoomDragThreshold) {
+    // In x mode the band is always full-height, so only its width matters;
+    // in xy mode a thin sliver on either axis would collapse that axis.
+    final tooSmall = widget.zoomMode == ChartZoomMode.xy
+        ? rect.width < widget.zoomDragThreshold || rect.height < widget.zoomDragThreshold
+        : rect.width < widget.zoomDragThreshold;
+    if (tooSmall) {
       _interactionNotifier.value = current.copyWith(clearDragRect: true);
       return;
     }
@@ -384,18 +392,20 @@ class _ScatterChart2DState extends State<ScatterChart2D> with SingleTickerProvid
       maxY: bounds.maxY,
     );
 
+    // Pick the point whose edge is nearest the pointer (so big bubbles are
+    // easy to hit), within a fixed slop.
     String? bestSeries;
     ChartPoint? bestPoint;
-    double bestDist = 22;
+    double bestEdgeDist = 22;
     for (final s in visibleSeries) {
       for (final p in s.data) {
+        // points outside the zoom window aren't drawn, so they can't be hit
+        if (p.x < bounds.minX || p.x > bounds.maxX || p.y < bounds.minY || p.y > bounds.maxY) continue;
         final r = p.size ?? widget.defaultPointRadius;
         final sp = Offset(axes.toScreenX(p.x), axes.toScreenY(p.y));
-        final d = (sp - pos).distance;
-        if (d < bestDist + r) {
-          if (d < bestDist) {
-            bestDist = d;
-          }
+        final edgeDist = (sp - pos).distance - r;
+        if (edgeDist < bestEdgeDist) {
+          bestEdgeDist = edgeDist;
           bestSeries = s.name;
           bestPoint = p;
         }

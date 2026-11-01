@@ -67,9 +67,13 @@ class Surface3DPainter extends CustomPainter {
       }
     }
 
+    // Model-space height of the z-axis: surface points sit at
+    // `value * zScale`, so the axis must use the same mapping.
+    final zTop = math.max(0.0, maxV * zScale);
+
     _drawFloorGrid(canvas, geometry);
     if (referenceColIndex != null) {
-      _drawReferenceLine(canvas, referenceColIndex!);
+      _drawReferenceLine(canvas, referenceColIndex!, zTop);
     }
 
     final fill = Paint()..style = PaintingStyle.fill;
@@ -93,7 +97,7 @@ class Surface3DPainter extends CustomPainter {
       canvas.drawPath(highlightedQuad!.path, highlightStroke);
     }
 
-    _drawAxes(canvas, minV, maxV);
+    _drawAxes(canvas, minV, maxV, zTop);
   }
 
   Color _gradientColor(double t) {
@@ -124,12 +128,12 @@ class Surface3DPainter extends CustomPainter {
     }
   }
 
-  void _drawReferenceLine(Canvas canvas, int colIndex) {
+  void _drawReferenceLine(Canvas canvas, int colIndex, double zTop) {
     final rows = data.length;
     final cols = data[0].length;
     final x = (colIndex - cols / 2) * spacing;
 
-    final top = Point3D(x, (0 - rows / 2) * spacing, 160);
+    final top = Point3D(x, (0 - rows / 2) * spacing, zTop + 30);
     final bottom = Point3D(x, (rows - 1 - rows / 2) * spacing, 0);
 
     final linePaint = Paint()
@@ -140,7 +144,7 @@ class Surface3DPainter extends CustomPainter {
     _drawDashedLine(canvas, projector.project(top), projector.project(bottom), linePaint);
 
     if (referenceLabel != null) {
-      final labelPos = projector.project(Point3D(x, (0 - rows / 2) * spacing, 175));
+      final labelPos = projector.project(Point3D(x, (0 - rows / 2) * spacing, zTop + 45));
       _drawText(canvas, referenceLabel!, Offset(labelPos.dx - 40, labelPos.dy - 14),
           Colors.black87, size: 11);
     }
@@ -160,7 +164,7 @@ class Surface3DPainter extends CustomPainter {
     }
   }
 
-  void _drawAxes(Canvas canvas, double minV, double maxV) {
+  void _drawAxes(Canvas canvas, double minV, double maxV, double zTop) {
     final axisPaint = Paint()
       ..color = Colors.black87
       ..strokeWidth = 1.4;
@@ -198,7 +202,7 @@ class Surface3DPainter extends CustomPainter {
 
     for (int r = 0; r < rows; r++) {
       final p = projector.project(
-        Point3D(origin.x, origin.y - spacing * 0.6 - r * spacing, 0),
+        Point3D(origin.x, (r - rows / 2) * spacing, 0),
       );
       canvas.drawLine(Offset(p.dx - 4, p.dy), Offset(p.dx + 4, p.dy), tickPaint);
       _drawText(canvas, yLabels[r], Offset(p.dx - 60, p.dy - 4), Colors.black54, size: 10);
@@ -208,14 +212,16 @@ class Surface3DPainter extends CustomPainter {
         Colors.black87, size: 13);
 
     // ---------------- Z AXIS ----------------
-    final zEnd = Point3D(origin.x, origin.y, 160);
-    canvas.drawLine(o, projector.project(zEnd), axisPaint);
+    final zBottom = math.min(0.0, minV * zScale);
+    final zEnd = Point3D(origin.x, origin.y, zTop);
+    canvas.drawLine(projector.project(Point3D(origin.x, origin.y, zBottom)), projector.project(zEnd), axisPaint);
 
     const levels = 5;
     for (int i = 0; i <= levels; i++) {
       final frac = i / levels;
-      final z = frac * 160;
       final value = minV + frac * (maxV - minV);
+      // same mapping as SurfaceGeometry.gridPoint, so ticks line up with the surface
+      final z = value * zScale;
       final p = projector.project(Point3D(origin.x, origin.y, z));
       canvas.drawLine(Offset(p.dx - 4, p.dy), Offset(p.dx + 4, p.dy), tickPaint);
       _drawText(canvas, valueFormatter(value), Offset(p.dx - 46, p.dy - 4),

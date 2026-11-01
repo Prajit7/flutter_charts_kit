@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'models.dart';
 import 'legend.dart';
@@ -139,7 +140,7 @@ class _BarChart2DState extends State<BarChart2D> with SingleTickerProviderStateM
   @override
   void didUpdateWidget(covariant BarChart2D oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.series, widget.series) || !identical(oldWidget.categories, widget.categories)) {
+    if (!listEquals(oldWidget.series, widget.series) || !listEquals(oldWidget.categories, widget.categories)) {
       if (widget.enableAnimation) _controller.forward(from: 0);
       _interactionNotifier.value = const _BarInteraction();
     }
@@ -172,17 +173,19 @@ class _BarChart2DState extends State<BarChart2D> with SingleTickerProviderStateM
       children: [
         ChartHeader(title: widget.title, subtitle: widget.subtitle),
         Expanded(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final size = Size(constraints.maxWidth, constraints.maxHeight - (widget.showLegend ? 32 : 0));
-              return ValueListenableBuilder<Set<String>>(
-                valueListenable: _hiddenNotifier,
-                builder: (context, hidden, _) {
-                  final visibleSeries = widget.series.where((s) => !hidden.contains(s.name)).toList();
-                  return Column(
-                    children: [
-                      Expanded(
-                        child: GestureDetector(
+          child: ValueListenableBuilder<Set<String>>(
+            valueListenable: _hiddenNotifier,
+            builder: (context, hidden, _) {
+              final visibleSeries = widget.series.where((s) => !hidden.contains(s.name)).toList();
+              return Column(
+                children: [
+                  Expanded(
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        // Measure the plot area itself: the legend below can wrap to
+                        // several rows, so its height is not a fixed constant.
+                        final size = constraints.biggest;
+                        return GestureDetector(
                           onTapUp: (d) => _handleTap(d.localPosition, size, visibleSeries),
                           onPanStart: widget.zoomMode == ChartZoomMode.none
                               ? null
@@ -251,25 +254,25 @@ class _BarChart2DState extends State<BarChart2D> with SingleTickerProviderStateM
                               },
                             ),
                           ),
-                        ),
+                        );
+                      },
+                    ),
+                  ),
+                  if (widget.showLegend)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Chart2DLegend(
+                        entries: widget.series.map((s) => LegendEntry(label: s.name, color: s.color)).toList(),
+                        hidden: hidden,
+                        onToggle: (name) {
+                          final next = {...hidden};
+                          next.contains(name) ? next.remove(name) : next.add(name);
+                          _hiddenNotifier.value = next;
+                          _interactionNotifier.value = _interactionNotifier.value.copyWith(clearHover: true);
+                        },
                       ),
-                      if (widget.showLegend)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 6),
-                          child: Chart2DLegend(
-                            entries: widget.series.map((s) => LegendEntry(label: s.name, color: s.color)).toList(),
-                            hidden: hidden,
-                            onToggle: (name) {
-                              final next = {...hidden};
-                              next.contains(name) ? next.remove(name) : next.add(name);
-                              _hiddenNotifier.value = next;
-                              _interactionNotifier.value = _interactionNotifier.value.copyWith(clearHover: true);
-                            },
-                          ),
-                        ),
-                    ],
-                  );
-                },
+                    ),
+                ],
               );
             },
           ),
@@ -499,9 +502,20 @@ class _BarGeometry {
   double get minY {
     if (fixedMinY != null) return fixedMinY!;
     double m = 0;
-    for (final s in series) {
+    if (stacked) {
+      // negative values stack downward, so the floor is the most negative sum
       for (final idx in visibleIndices) {
-        if (idx < s.values.length && s.values[idx] < m) m = s.values[idx];
+        double sum = 0;
+        for (final s in series) {
+          if (idx < s.values.length && s.values[idx] < 0) sum += s.values[idx];
+        }
+        if (sum < m) m = sum;
+      }
+    } else {
+      for (final s in series) {
+        for (final idx in visibleIndices) {
+          if (idx < s.values.length && s.values[idx] < m) m = s.values[idx];
+        }
       }
     }
     return m;
@@ -602,9 +616,12 @@ class _BarGeometry {
   double _lerp(double a, double b, double t) => a + (b - a) * t;
 
   (int, String, double, Offset)? hitTest(Offset pos) {
+    if (!plotArea.contains(pos)) return null; // bars are clipped to the plot
     for (final (c, s, rect) in buildBars()) {
       if (rect.inflate(1).contains(pos)) {
-        return (c, series[s].name, series[s].values[c], Offset(rect.center.dx, rect.top));
+        // a series shorter than `categories` renders 0 for the missing slots
+        final value = c < series[s].values.length ? series[s].values[c] : 0.0;
+        return (c, series[s].name, value, Offset(rect.center.dx, rect.top));
       }
     }
     return null;
@@ -678,12 +695,16 @@ class _BarChartPainter extends CustomPainter {
       axes.drawXTick(canvas, plotArea.left + (slot + 0.5) * groupWidth, categories[visibleIndices[slot]]);
     }
 
+    // An xy zoom can cut bars off mid-height; keep them inside the axes.
+    canvas.save();
+    canvas.clipRect(plotArea);
     for (final (c, s, rect) in geometry.buildAnimatedBars(progress)) {
       final isHovered = hover != null && hover!.$1 == c && hover!.$2 == series[s].name;
       final paint = Paint()..color = isHovered ? series[s].color : series[s].color.withOpacity(0.9);
       final r = RRect.fromRectAndCorners(rect, topLeft: const Radius.circular(3), topRight: const Radius.circular(3));
       canvas.drawRRect(r, paint);
     }
+    canvas.restore();
   }
 
   @override
