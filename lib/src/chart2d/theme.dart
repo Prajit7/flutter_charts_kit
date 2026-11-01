@@ -48,6 +48,20 @@ class ChartTheme {
     crosshairColor: Colors.white38,
   );
 
+  /// A dark trading-terminal look with an opaque background — the default
+  /// for [CandlestickChart2D] when no theme is set.
+  static const ChartTheme trading = ChartTheme(
+    backgroundColor: Color(0xFF131722),
+    gridColor: Color(0x1FFFFFFF),
+    axisColor: Color(0xFF363A45),
+    tickTextColor: Color(0xFFB2B5BE),
+    titleColor: Color(0xFFD1D4DC),
+    subtitleColor: Color(0xFF8E93A0),
+    tooltipBackgroundColor: Color(0xFF2A2E39),
+    tooltipTextColor: Color(0xFFD1D4DC),
+    crosshairColor: Color(0x99B2B5BE),
+  );
+
   ChartTheme copyWith({
     Color? backgroundColor,
     Color? gridColor,
@@ -95,10 +109,11 @@ class ChartThemeScope extends InheritedWidget {
 
   const ChartThemeScope({super.key, required this.theme, required super.child});
 
-  static ChartTheme of(BuildContext context) {
-    final scope = context.dependOnInheritedWidgetOfExactType<ChartThemeScope>();
-    return scope?.theme ?? ChartTheme.light;
-  }
+  static ChartTheme of(BuildContext context) => maybeOf(context) ?? ChartTheme.light;
+
+  /// The nearest scope's theme, or null when no [ChartThemeScope] is above.
+  static ChartTheme? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<ChartThemeScope>()?.theme;
 
   @override
   bool updateShouldNotify(ChartThemeScope oldWidget) => true;

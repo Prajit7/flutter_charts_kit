@@ -13,7 +13,7 @@ class Charts2DDemoApp extends StatefulWidget {
 }
 
 class _Charts2DDemoAppState extends State<Charts2DDemoApp> {
-  bool _dark = false;
+  bool _dark = true;
 
   @override
   Widget build(BuildContext context) {
@@ -80,11 +80,11 @@ class Charts2DDemoScreen extends StatelessWidget {
       onPointTap: (series, point) {
         if (point != null) debugPrint('Tapped $series at ${point.label}: ${point.y}');
       },
-      series: [
+      series: const [
         XySeries(
           name: 'Revenue',
           color: Colors.indigo,
-          data: const [
+          data: [
             ChartPoint(x: 1, y: 120, label: 'Jan'),
             ChartPoint(x: 2, y: 180, label: 'Feb'),
             ChartPoint(x: 3, y: 150, label: 'Mar'),
@@ -96,7 +96,7 @@ class Charts2DDemoScreen extends StatelessWidget {
         XySeries(
           name: 'Costs',
           color: Colors.redAccent,
-          data: const [
+          data: [
             ChartPoint(x: 1, y: 80, label: 'Jan'),
             ChartPoint(x: 2, y: 95, label: 'Feb'),
             ChartPoint(x: 3, y: 100, label: 'Mar'),
@@ -152,11 +152,11 @@ class Charts2DDemoScreen extends StatelessWidget {
       onPointTap: (series, point) {
         if (point != null) debugPrint('Tapped $series: ${point.label}');
       },
-      series: [
+      series: const [
         XySeries(
           name: 'Cohort A',
           color: Colors.blue,
-          data: const [
+          data: [
             ChartPoint(x: 2.1, y: 65, label: 'User 1'),
             ChartPoint(x: 4.5, y: 78, label: 'User 2'),
             ChartPoint(x: 6.2, y: 85, label: 'User 3'),
@@ -167,7 +167,7 @@ class Charts2DDemoScreen extends StatelessWidget {
         XySeries(
           name: 'Cohort B',
           color: Colors.pink,
-          data: const [
+          data: [
             ChartPoint(x: 1.5, y: 55, label: 'User 6'),
             ChartPoint(x: 5.0, y: 60, label: 'User 7'),
             ChartPoint(x: 7.4, y: 68, label: 'User 8'),

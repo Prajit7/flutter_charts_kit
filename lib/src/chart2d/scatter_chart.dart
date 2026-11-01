@@ -1,3 +1,5 @@
+import 'dart:ui' show PointMode;
+import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'models.dart';
@@ -6,6 +8,10 @@ import 'cartesian_axes.dart';
 import 'theme.dart';
 import 'chart_chrome.dart';
 import 'zoom.dart';
+import 'common.dart';
+import 'controller.dart';
+import 'reference.dart';
+import 'time_axis.dart';
 
 /// Transient interaction state for [ScatterChart2D] — hover, an
 /// in-progress drag-selection rectangle, and the current zoom window. Held
@@ -61,12 +67,31 @@ class ScatterChart2D extends StatefulWidget {
   final String? xAxisTitle;
   final String? yAxisTitle;
   final String emptyStateMessage;
-  final String Function(double value) xTickFormatter;
+  /// How x values are interpreted. With [ChartAxisType.time], x is
+  /// milliseconds since epoch (see [ChartPoint.at]) and ticks fall on
+  /// calendar boundaries.
+  final ChartAxisType xAxisType;
+
+  /// Defaults to plain numbers, or dates/times on a time axis.
+  final String Function(double value)? xTickFormatter;
   final String Function(double value) yTickFormatter;
   final bool showGrid;
   final bool showLegend;
+  final ChartLegendPosition legendPosition;
   final bool showCrosshair;
   final double defaultPointRadius;
+
+  /// Horizontal/vertical marker lines (targets, thresholds, "today").
+  final List<ChartReferenceLine> referenceLines;
+
+  /// Shaded ranges drawn behind the points.
+  final List<ChartReferenceBand> referenceBands;
+
+  /// Replaces the default tooltip card.
+  final ChartPointTooltipBuilder? tooltipBuilder;
+
+  /// Reset zoom or export an image from outside the chart.
+  final ChartController? controller;
 
   final bool enableAnimation;
   final Duration animationDuration;
@@ -94,12 +119,18 @@ class ScatterChart2D extends StatefulWidget {
     this.xAxisTitle,
     this.yAxisTitle,
     this.emptyStateMessage = 'No data to display',
-    this.xTickFormatter = _defaultFormatter,
-    this.yTickFormatter = _defaultFormatter,
+    this.xAxisType = ChartAxisType.numeric,
+    this.xTickFormatter,
+    this.yTickFormatter = Cartesian2DAxes.formatNumber,
     this.showGrid = true,
     this.showLegend = true,
+    this.legendPosition = ChartLegendPosition.bottom,
     this.showCrosshair = true,
     this.defaultPointRadius = 5,
+    this.referenceLines = const [],
+    this.referenceBands = const [],
+    this.tooltipBuilder,
+    this.controller,
     this.enableAnimation = true,
     this.animationDuration = const Duration(milliseconds: 500),
     this.zoomMode = ChartZoomMode.xy,
@@ -108,20 +139,32 @@ class ScatterChart2D extends StatefulWidget {
     this.onPointTap,
   });
 
-  static String _defaultFormatter(double v) =>
-      v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(1);
-
   @override
   State<ScatterChart2D> createState() => _ScatterChart2DState();
 }
 
-class _ScatterChart2DState extends State<ScatterChart2D> with SingleTickerProviderStateMixin {
+class _ScatterChart2DState extends State<ScatterChart2D>
+    with SingleTickerProviderStateMixin, ChartControllerMixin<ScatterChart2D> {
   final ValueNotifier<Set<String>> _hiddenNotifier = ValueNotifier(const {});
   final ValueNotifier<_ScatterInteraction> _interactionNotifier =
       ValueNotifier(const _ScatterInteraction());
   late final AnimationController _controller;
 
-  Offset? _dragStartLocal;
+  final _dragZoom = ChartDragZoom();
+
+  @override
+  ChartController? controllerOf(ScatterChart2D widget) => widget.controller;
+
+  @override
+  void resetZoom() => _interactionNotifier.value = _interactionNotifier.value.copyWith(clearZoom: true);
+
+  String _formatX(double x) {
+    final custom = widget.xTickFormatter;
+    if (custom != null) return custom(x);
+    return widget.xAxisType == ChartAxisType.time
+        ? formatTime(DateTime.fromMillisecondsSinceEpoch(x.round()))
+        : Cartesian2DAxes.formatNumber(x);
+  }
 
   @override
   void initState() {
@@ -132,6 +175,7 @@ class _ScatterChart2DState extends State<ScatterChart2D> with SingleTickerProvid
     } else {
       _controller.value = 1;
     }
+    _interactionNotifier.addListener(() => reportZoomed(_interactionNotifier.value.zoom != null));
   }
 
   @override
@@ -156,161 +200,129 @@ class _ScatterChart2DState extends State<ScatterChart2D> with SingleTickerProvid
     final theme = ChartThemeScope.of(context);
 
     if (widget.series.isEmpty || widget.series.every((s) => s.data.isEmpty)) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          ChartHeader(title: widget.title, subtitle: widget.subtitle),
-          Expanded(child: ChartEmptyState(message: widget.emptyStateMessage)),
-        ],
+      return ChartFrame(
+        boundaryKey: chartBoundaryKey,
+        title: widget.title,
+        subtitle: widget.subtitle,
+        plot: ChartEmptyState(message: widget.emptyStateMessage),
       );
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        ChartHeader(title: widget.title, subtitle: widget.subtitle),
-        Expanded(
-          child: ValueListenableBuilder<Set<String>>(
-            valueListenable: _hiddenNotifier,
-            builder: (context, hidden, _) {
-              final visibleSeries = widget.series.where((s) => !hidden.contains(s.name)).toList();
-              return Column(
-                children: [
-                  Expanded(
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        // Measure the plot area itself: the legend below can wrap to
-                        // several rows, so its height is not a fixed constant.
-                        final size = constraints.biggest;
-                        return MouseRegion(
-                          onHover: (e) => _updateHover(e.localPosition, size, visibleSeries),
-                          onExit: (_) {
-                            final current = _interactionNotifier.value;
-                            _interactionNotifier.value = current.copyWith(clearHover: true);
-                            widget.onPointHover?.call(null, null);
-                          },
-                          child: GestureDetector(
-                            onTapUp: (d) => _handleTap(d.localPosition, size, visibleSeries),
-                            onPanStart: widget.zoomMode == ChartZoomMode.none
-                                ? null
-                                : (d) => _handlePanStart(d.localPosition, size),
-                            onPanUpdate: widget.zoomMode == ChartZoomMode.none
-                                ? null
-                                : (d) => _handlePanUpdate(d.localPosition, size),
-                            onPanEnd: widget.zoomMode == ChartZoomMode.none
-                                ? null
-                                : (_) => _handlePanEnd(size, visibleSeries),
-                            child: ValueListenableBuilder<_ScatterInteraction>(
-                              valueListenable: _interactionNotifier,
-                              builder: (context, interaction, __) {
-                                return Stack(
-                                  children: [
-                                    AnimatedBuilder(
-                                      animation: _controller,
-                                      builder: (context, _) => CustomPaint(
-                                        size: size,
-                                        painter: _ScatterChartPainter(
-                                          series: visibleSeries,
-                                          theme: theme,
-                                          xAxisTitle: widget.xAxisTitle,
-                                          yAxisTitle: widget.yAxisTitle,
-                                          xTickFormatter: widget.xTickFormatter,
-                                          yTickFormatter: widget.yTickFormatter,
-                                          showGrid: widget.showGrid,
-                                          defaultRadius: widget.defaultPointRadius,
-                                          hoverKey: interaction.hover == null
-                                              ? null
-                                              : (interaction.hover!.series, interaction.hover!.point),
-                                          crosshairPoint:
-                                              widget.showCrosshair ? interaction.hover?.screenPos : null,
-                                          progress: _controller.value,
-                                          zoom: interaction.zoom,
-                                        ),
-                                      ),
-                                    ),
-                                    if (interaction.dragRectScreen != null)
-                                      Positioned.fromRect(
-                                        rect: interaction.dragRectScreen!,
-                                        child: Container(
-                                          decoration: BoxDecoration(
-                                            color: theme.crosshairColor.withOpacity(0.15),
-                                            border: Border.all(color: theme.crosshairColor, width: 1),
-                                          ),
-                                        ),
-                                      ),
-                                    if (interaction.zoom != null)
-                                      Positioned(
-                                        right: 8,
-                                        top: 8,
-                                        child: _ResetZoomButton(
-                                          onTap: () {
-                                            final current = _interactionNotifier.value;
-                                            _interactionNotifier.value = current.copyWith(clearZoom: true);
-                                          },
-                                        ),
-                                      ),
-                                    if (interaction.hover != null)
-                                      _buildTooltip(interaction.hover!, size, theme),
-                                  ],
-                                );
-                              },
+    final zoomEnabled = widget.zoomMode != ChartZoomMode.none;
+    return ChartFrame(
+      boundaryKey: chartBoundaryKey,
+      semanticLabel: describeChart('Scatter chart', widget.title, [for (final s in widget.series) '${s.name}: ${s.data.length} points']),
+      title: widget.title,
+      subtitle: widget.subtitle,
+      legendPosition: widget.legendPosition,
+      legendBuilder: widget.showLegend ? _buildLegend : null,
+      plot: ValueListenableBuilder<Set<String>>(
+        valueListenable: _hiddenNotifier,
+        builder: (context, hidden, _) {
+          final visibleSeries = widget.series.where((s) => !hidden.contains(s.name)).toList();
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              // Measure the plot area itself: the legend can wrap to several
+              // rows, so its size is not a fixed constant.
+              final size = constraints.biggest;
+              return MouseRegion(
+                onHover: (e) => _updateHover(e.localPosition, size, visibleSeries),
+                onExit: (_) {
+                  _interactionNotifier.value = _interactionNotifier.value.copyWith(clearHover: true);
+                  widget.onPointHover?.call(null, null);
+                },
+                child: GestureDetector(
+                  onTapUp: (d) => _handleTap(d.localPosition, size, visibleSeries),
+                  onPanStart: zoomEnabled ? (d) => _handlePanStart(d.localPosition, size) : null,
+                  onPanUpdate: zoomEnabled ? (d) => _handlePanUpdate(d.localPosition, size) : null,
+                  onPanEnd: zoomEnabled ? (_) => _handlePanEnd(size, visibleSeries) : null,
+                  child: ValueListenableBuilder<_ScatterInteraction>(
+                    valueListenable: _interactionNotifier,
+                    builder: (context, interaction, __) {
+                      return Stack(
+                        children: [
+                          // Data layer repaints only on data/zoom/animation changes;
+                          // hover draws on the overlay below it.
+                          RepaintBoundary(
+                            child: AnimatedBuilder(
+                            animation: _controller,
+                            builder: (context, _) => CustomPaint(
+                              size: size,
+                              painter: _ScatterChartPainter(
+                                series: visibleSeries,
+                                theme: theme,
+                                xAxisTitle: widget.xAxisTitle,
+                                yAxisTitle: widget.yAxisTitle,
+                                xAxisType: widget.xAxisType,
+                                xTickFormatter: widget.xTickFormatter,
+                                yTickFormatter: widget.yTickFormatter,
+                                showGrid: widget.showGrid,
+                                defaultRadius: widget.defaultPointRadius,
+                                referenceLines: widget.referenceLines,
+                                referenceBands: widget.referenceBands,
+                                progress: _controller.value,
+                                zoom: interaction.zoom,
+                              ),
                             ),
                           ),
-                        );
-                      },
-                    ),
+                          ),
+                          if (interaction.hover != null)
+                            IgnorePointer(
+                              child: CustomPaint(
+                                size: size,
+                                painter: _ScatterHoverPainter(
+                                  hover: interaction.hover!,
+                                  color: widget.series.firstWhere((s) => s.name == interaction.hover!.series).color,
+                                  radius: interaction.hover!.point.size ?? widget.defaultPointRadius,
+                                  crosshair: widget.showCrosshair,
+                                  theme: theme,
+                                ),
+                              ),
+                            ),
+                          if (interaction.dragRectScreen != null)
+                            ChartSelectionOverlay(rect: interaction.dragRectScreen!, theme: theme),
+                          if (interaction.zoom != null)
+                            Positioned(right: 8, top: 8, child: ChartResetZoomButton(theme: theme, onTap: resetZoom)),
+                          if (interaction.hover != null) _buildTooltip(interaction.hover!, size, theme),
+                        ],
+                      );
+                    },
                   ),
-                  if (widget.showLegend)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Chart2DLegend(
-                        entries: widget.series.map((s) => LegendEntry(label: s.name, color: s.color)).toList(),
-                        hidden: hidden,
-                        onToggle: (name) {
-                          final next = {...hidden};
-                          next.contains(name) ? next.remove(name) : next.add(name);
-                          _hiddenNotifier.value = next;
-                          _interactionNotifier.value = _interactionNotifier.value.copyWith(clearHover: true);
-                        },
-                      ),
-                    ),
-                ],
+                ),
               );
             },
-          ),
-        ),
-      ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildLegend(Axis direction) {
+    return ValueListenableBuilder<Set<String>>(
+      valueListenable: _hiddenNotifier,
+      builder: (context, hidden, _) => Chart2DLegend(
+        direction: direction,
+        entries: widget.series.map((s) => LegendEntry(label: s.name, color: s.color)).toList(),
+        hidden: hidden,
+        onToggle: (name) {
+          final next = {...hidden};
+          next.contains(name) ? next.remove(name) : next.add(name);
+          _hiddenNotifier.value = next;
+          _interactionNotifier.value = _interactionNotifier.value.copyWith(clearHover: true);
+        },
+      ),
     );
   }
 
   // ---------------- zoom drag handling ----------------
 
   void _handlePanStart(Offset pos, Size size) {
-    final plotArea = Cartesian2DAxes.computePlotArea(size);
-    if (!plotArea.contains(pos)) return;
-    _dragStartLocal = pos;
+    _dragZoom.start(pos, Cartesian2DAxes.computePlotArea(size));
   }
 
   void _handlePanUpdate(Offset pos, Size size) {
-    if (_dragStartLocal == null) return;
-    final plotArea = Cartesian2DAxes.computePlotArea(size);
-    final clamped = Offset(
-      pos.dx.clamp(plotArea.left, plotArea.right),
-      pos.dy.clamp(plotArea.top, plotArea.bottom),
-    );
-    Rect rect;
-    if (widget.zoomMode == ChartZoomMode.xy) {
-      rect = Rect.fromPoints(_dragStartLocal!, clamped);
-    } else {
-      // x-only zoom: show a full-height band rather than a sliver that
-      // only covers however far the pointer wandered vertically.
-      rect = Rect.fromLTRB(
-        _dragStartLocal!.dx < clamped.dx ? _dragStartLocal!.dx : clamped.dx,
-        plotArea.top,
-        _dragStartLocal!.dx < clamped.dx ? clamped.dx : _dragStartLocal!.dx,
-        plotArea.bottom,
-      );
-    }
+    final rect = _dragZoom.update(pos, Cartesian2DAxes.computePlotArea(size), widget.zoomMode);
+    if (rect == null) return;
     final current = _interactionNotifier.value;
     _interactionNotifier.value = current.copyWith(dragRectScreen: rect, clearHover: true);
   }
@@ -318,15 +330,10 @@ class _ScatterChart2DState extends State<ScatterChart2D> with SingleTickerProvid
   void _handlePanEnd(Size size, List<XySeries> visibleSeries) {
     final current = _interactionNotifier.value;
     final rect = current.dragRectScreen;
-    _dragStartLocal = null;
+    _dragZoom.end();
     if (rect == null) return;
 
-    // In x mode the band is always full-height, so only its width matters;
-    // in xy mode a thin sliver on either axis would collapse that axis.
-    final tooSmall = widget.zoomMode == ChartZoomMode.xy
-        ? rect.width < widget.zoomDragThreshold || rect.height < widget.zoomDragThreshold
-        : rect.width < widget.zoomDragThreshold;
-    if (tooSmall) {
+    if (ChartDragZoom.isTooSmall(rect, widget.zoomMode, widget.zoomDragThreshold)) {
       _interactionNotifier.value = current.copyWith(clearDragRect: true);
       return;
     }
@@ -420,41 +427,17 @@ class _ScatterChart2DState extends State<ScatterChart2D> with SingleTickerProvid
   }
 
   Widget _buildTooltip(({String series, ChartPoint point, Offset screenPos}) hover, Size size, ChartTheme theme) {
-    const cardWidth = 150.0;
-    double left = hover.screenPos.dx + 12;
-    double top = hover.screenPos.dy - 50;
-    if (left + cardWidth > size.width) left = hover.screenPos.dx - cardWidth - 12;
-    if (top < 0) top = 4;
-
-    return Positioned(
-      left: left,
-      top: top,
-      child: IgnorePointer(
-        child: Container(
-          width: cardWidth,
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: theme.tooltipBackgroundColor,
-            borderRadius: BorderRadius.circular(8),
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.12), blurRadius: 10, offset: const Offset(0, 3))],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(hover.series, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: theme.tooltipTextColor)),
-              Text(
-                hover.point.label ?? '(${widget.xTickFormatter(hover.point.x)}, ${widget.yTickFormatter(hover.point.y)})',
-                style: TextStyle(fontSize: 11, color: theme.tooltipTextColor.withOpacity(0.7)),
-              ),
-              if (hover.point.label != null)
-                Text(
-                  '(${widget.xTickFormatter(hover.point.x)}, ${widget.yTickFormatter(hover.point.y)})',
-                  style: TextStyle(fontSize: 12, color: theme.tooltipTextColor),
-                ),
-            ],
-          ),
-        ),
+    final coords = '(${_formatX(hover.point.x)}, ${widget.yTickFormatter(hover.point.y)})';
+    final custom = widget.tooltipBuilder;
+    return positionChartTooltip(
+      anchor: hover.screenPos,
+      areaSize: size,
+      child: custom != null ? custom(context, hover.series, hover.point) : ChartTooltipCard(
+        theme: theme,
+        width: 150,
+        title: hover.series,
+        subtitle: hover.point.label ?? coords,
+        value: hover.point.label != null ? coords : null,
       ),
     );
   }
@@ -501,38 +484,18 @@ class _ScatterChart2DState extends State<ScatterChart2D> with SingleTickerProvid
   );
 }
 
-class _ResetZoomButton extends StatelessWidget {
-  final VoidCallback onTap;
-  const _ResetZoomButton({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.grey.shade100,
-      borderRadius: BorderRadius.circular(8),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: onTap,
-        child: const Padding(
-          padding: EdgeInsets.all(6),
-          child: Icon(Icons.zoom_out_map, size: 18),
-        ),
-      ),
-    );
-  }
-}
-
 class _ScatterChartPainter extends CustomPainter {
   final List<XySeries> series;
   final ChartTheme theme;
   final String? xAxisTitle;
   final String? yAxisTitle;
-  final String Function(double) xTickFormatter;
+  final ChartAxisType xAxisType;
+  final String Function(double)? xTickFormatter;
   final String Function(double) yTickFormatter;
   final bool showGrid;
   final double defaultRadius;
-  final (String, ChartPoint)? hoverKey;
-  final Offset? crosshairPoint;
+  final List<ChartReferenceLine> referenceLines;
+  final List<ChartReferenceBand> referenceBands;
   final ChartZoomWindow? zoom;
 
   /// 0 (invisible) to 1 (full size) — drives the pop-in entrance animation.
@@ -543,12 +506,13 @@ class _ScatterChartPainter extends CustomPainter {
     required this.theme,
     required this.xAxisTitle,
     required this.yAxisTitle,
+    required this.xAxisType,
     required this.xTickFormatter,
     required this.yTickFormatter,
     required this.showGrid,
     required this.defaultRadius,
-    required this.hoverKey,
-    required this.crosshairPoint,
+    required this.referenceLines,
+    required this.referenceBands,
     required this.progress,
     required this.zoom,
   });
@@ -568,7 +532,6 @@ class _ScatterChartPainter extends CustomPainter {
       theme: theme,
     );
     final yTicks = Cartesian2DAxes.niceTicks(bounds.minY, bounds.maxY);
-    final xTicks = Cartesian2DAxes.niceTicks(bounds.minX, bounds.maxX);
 
     axes.drawGridAndAxes(
       canvas,
@@ -578,37 +541,104 @@ class _ScatterChartPainter extends CustomPainter {
       yAxisTitle: yAxisTitle,
       showGrid: showGrid,
     );
-    for (final xv in xTicks) {
-      axes.drawXTick(canvas, axes.toScreenX(xv), xTickFormatter(xv));
+    if (xAxisType == ChartAxisType.time) {
+      final maxTicks = math.max(2, (plotArea.width / 64).floor());
+      axes.drawXTicks(canvas, [
+        for (final (x, label) in timeTicks(bounds.minX, bounds.maxX, maxTicks: maxTicks))
+          (axes.toScreenX(x), xTickFormatter?.call(x) ?? label),
+      ]);
+    } else {
+      final fmt = xTickFormatter ?? Cartesian2DAxes.formatNumber;
+      axes.drawXTicks(canvas, [
+        for (final xv in Cartesian2DAxes.niceTicks(bounds.minX, bounds.maxX)) (axes.toScreenX(xv), fmt(xv)),
+      ]);
     }
 
+    final references = ReferencePainter(axes);
+    references.paintBands(canvas, referenceBands);
+
+    canvas.save();
+    canvas.clipRect(axes.plotArea.inflate(defaultRadius));
     for (final s in series) {
+      final paint = Paint()..color = s.color.withValues(alpha: 0.75 * progress);
+      // Default-size points go to the GPU in one batch per series (round
+      // point caps draw them as circles); sized bubbles are drawn singly.
+      final batch = <double>[];
       for (final p in s.data) {
-        if (p.x < bounds.minX || p.x > bounds.maxX || p.y < bounds.minY || p.y > bounds.maxY) {
-          continue;
-        }
-        final sp = Offset(axes.toScreenX(p.x), axes.toScreenY(p.y));
-        final r = (p.size ?? defaultRadius) * progress;
-        final isHovered = hoverKey != null && hoverKey!.$1 == s.name && hoverKey!.$2 == p;
-        canvas.drawCircle(sp, r, Paint()..color = s.color.withOpacity((isHovered ? 1 : 0.75) * progress));
-        if (isHovered) {
-          canvas.drawCircle(
-            sp,
-            r + 3,
-            Paint()
-              ..color = s.color
-              ..style = PaintingStyle.stroke
-              ..strokeWidth = 1.5,
-          );
+        if (p.x < bounds.minX || p.x > bounds.maxX || p.y < bounds.minY || p.y > bounds.maxY) continue;
+        final sx = axes.toScreenX(p.x), sy = axes.toScreenY(p.y);
+        if (p.size == null) {
+          batch
+            ..add(sx)
+            ..add(sy);
+        } else {
+          canvas.drawCircle(Offset(sx, sy), p.size! * progress, paint);
         }
       }
+      if (batch.isNotEmpty && progress > 0) {
+        canvas.drawRawPoints(
+          PointMode.points,
+          Float32List.fromList(batch),
+          Paint()
+            ..color = paint.color
+            ..strokeWidth = defaultRadius * 2 * progress
+            ..strokeCap = StrokeCap.round,
+        );
+      }
     }
+    canvas.restore();
 
-    if (crosshairPoint != null) {
-      axes.drawCrosshair(canvas, crosshairPoint!);
+    references.paintLines(canvas, referenceLines);
+  }
+
+  /// Hover rebuilds this painter with identical inputs; only real changes
+  /// repaint the — possibly huge — data layer.
+  @override
+  bool shouldRepaint(covariant _ScatterChartPainter old) =>
+      !identical(old.series, series) ||
+      old.progress != progress ||
+      !identical(old.zoom, zoom) ||
+      old.theme != theme ||
+      old.showGrid != showGrid ||
+      old.defaultRadius != defaultRadius ||
+      old.xAxisType != xAxisType ||
+      old.xAxisTitle != xAxisTitle ||
+      old.yAxisTitle != yAxisTitle ||
+      old.xTickFormatter != xTickFormatter ||
+      old.yTickFormatter != yTickFormatter ||
+      !identical(old.referenceLines, referenceLines) ||
+      !identical(old.referenceBands, referenceBands);
+}
+
+/// The hovered point's highlight and crosshair, painted above the data layer.
+class _ScatterHoverPainter extends CustomPainter {
+  final ({String series, ChartPoint point, Offset screenPos}) hover;
+  final Color color;
+  final double radius;
+  final bool crosshair;
+  final ChartTheme theme;
+
+  _ScatterHoverPainter({required this.hover, required this.color, required this.radius, required this.crosshair, required this.theme});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final p = hover.screenPos;
+    if (crosshair) {
+      Cartesian2DAxes(plotArea: Cartesian2DAxes.computePlotArea(size), minX: 0, maxX: 1, minY: 0, maxY: 1, theme: theme)
+          .drawCrosshair(canvas, p);
     }
+    canvas.drawCircle(p, radius, Paint()..color = color);
+    canvas.drawCircle(
+      p,
+      radius + 3,
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5,
+    );
   }
 
   @override
-  bool shouldRepaint(covariant _ScatterChartPainter oldDelegate) => true;
+  bool shouldRepaint(covariant _ScatterHoverPainter old) =>
+      old.hover != hover || old.color != color || old.radius != radius || old.theme != theme;
 }

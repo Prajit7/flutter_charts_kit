@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_charts_kit/flutter_charts_kit.dart';
+import 'more_charts.dart';
+import 'specialty_charts.dart';
+import 'three_d_page.dart';
 
 void main() => runApp(const ChartsDemoApp());
 
@@ -11,7 +14,7 @@ class ChartsDemoApp extends StatefulWidget {
 }
 
 class _ChartsDemoAppState extends State<ChartsDemoApp> {
-  bool _dark = false;
+  bool _dark = true; // trading-style dark by default; toggle in the app bar
 
   @override
   Widget build(BuildContext context) {
@@ -99,7 +102,7 @@ class ChartsDemoScreen extends StatelessWidget {
     final isMobile = Responsive.isMobile(context);
 
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Flutter Charts Kit'),
@@ -122,6 +125,10 @@ class ChartsDemoScreen extends StatelessWidget {
                 icon: const Icon(Icons.view_in_ar),
                 text: isMobile ? '3D' : '3D Chart',
               ),
+              Tab(
+                icon: const Icon(Icons.dashboard_customize_outlined),
+                text: isMobile ? 'More' : 'More charts',
+              ),
             ],
           ),
         ),
@@ -129,6 +136,7 @@ class ChartsDemoScreen extends StatelessWidget {
           children: [
             Charts2DPage(),
             Surface3DPage(),
+            SpecialtyChartsPage(),
           ],
         ),
       ),
@@ -207,6 +215,48 @@ class Charts2DPage extends StatelessWidget {
         ),
 
         const SizedBox(height: 24),
+
+        SizedBox(
+          height: chartHeight + 48, // + toolbar
+          child: const TimeSeriesDemo(),
+        ),
+
+        const SizedBox(height: 24),
+
+        SizedBox(
+          height: chartHeight,
+          child: const StackedAreaDemo(),
+        ),
+
+        const SizedBox(height: 24),
+
+        SizedBox(
+          height: chartHeight,
+          child: const HorizontalBarDemo(),
+        ),
+
+        const SizedBox(height: 24),
+
+        SizedBox(
+          height: chartHeight,
+          child: const ComboDemo(),
+        ),
+
+        const SizedBox(height: 24),
+
+        SizedBox(
+          height: chartHeight + 48, // + toolbar
+          child: const LiveDataDemo(),
+        ),
+
+        const SizedBox(height: 24),
+
+        SizedBox(
+          height: chartHeight,
+          child: const BigDataDemo(),
+        ),
+
+        const SizedBox(height: 24),
       ],
     );
   }
@@ -230,11 +280,11 @@ class Charts2DPage extends StatelessWidget {
         }
       },
 
-      series: [
+      series: const [
         XySeries(
           name: 'Revenue',
           color: Colors.indigo,
-          data: const [
+          data: [
             ChartPoint(
               x: 1,
               y: 120,
@@ -271,7 +321,7 @@ class Charts2DPage extends StatelessWidget {
         XySeries(
           name: 'Costs',
           color: Colors.redAccent,
-          data: const [
+          data: [
             ChartPoint(
               x: 1,
               y: 80,
@@ -457,11 +507,11 @@ class Charts2DPage extends StatelessWidget {
         }
       },
 
-      series: [
+      series: const [
         XySeries(
           name: 'Cohort A',
           color: Colors.blue,
-          data: const [
+          data: [
             ChartPoint(
               x: 2.1,
               y: 65,
@@ -493,7 +543,7 @@ class Charts2DPage extends StatelessWidget {
         XySeries(
           name: 'Cohort B',
           color: Colors.pink,
-          data: const [
+          data: [
             ChartPoint(
               x: 1.5,
               y: 55,
@@ -520,96 +570,6 @@ class Charts2DPage extends StatelessWidget {
 
       xAxisTitle: 'Hours practiced',
       yAxisTitle: 'Score',
-    );
-  }
-}
-
-// ============================================================
-// 3D SURFACE CHART
-// ============================================================
-
-class Surface3DPage extends StatelessWidget {
-  const Surface3DPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final size = MediaQuery.sizeOf(context);
-
-    final isMobile = size.width < 600;
-    final isTablet =
-        size.width >= 600 && size.width < 1024;
-
-    const data = [
-      [12.0, 18.0, 9.0, 22.0],
-      [15.0, 20.0, 11.0, 25.0],
-      [19.0, 24.0, 14.0, 30.0],
-      [23.0, 29.0, 17.0, 35.0],
-    ];
-
-    return SafeArea(
-      child: Padding(
-        padding: EdgeInsets.all(
-          isMobile
-              ? 8
-              : isTablet
-                  ? 16
-                  : 24,
-        ),
-        child: LayoutBuilder(
-          builder: (
-            context,
-            constraints,
-          ) {
-            final availableHeight =
-                constraints.maxHeight;
-
-            final chartHeight = isMobile
-                ? availableHeight * 0.75
-                : isTablet
-                    ? availableHeight * 0.82
-                    : availableHeight * 0.85;
-
-            return Center(
-              child: SizedBox(
-                width: constraints.maxWidth,
-                height: chartHeight,
-                child: Surface3DChart(
-                  data: data,
-
-                  xLabels: const [
-                    'North',
-                    'South',
-                    'East',
-                    'West',
-                  ],
-
-                  yLabels: const [
-                    'Jan',
-                    'Feb',
-                    'Mar',
-                    'Apr',
-                  ],
-
-                  xAxisTitle: 'Region',
-                  yAxisTitle: 'Month',
-                  zAxisTitle: 'Sales',
-
-                  valueFormatter: (v) =>
-                      '\$${v.toStringAsFixed(0)}k',
-
-                  gradient: const [
-                    Colors.teal,
-                    Colors.amber,
-                    Colors.deepOrange,
-                  ],
-
-                  showLegend: true,
-                ),
-              ),
-            );
-          },
-        ),
-      ),
     );
   }
 }

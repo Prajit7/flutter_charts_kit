@@ -117,12 +117,12 @@ void main() {
   test('models compare by value', () {
     expect(const ChartPoint(x: 1, y: 2), const ChartPoint(x: 1, y: 2));
     expect(
-      XySeries(name: 'a', color: Colors.red, data: [const ChartPoint(x: 1, y: 2)]),
-      XySeries(name: 'a', color: Colors.red, data: [const ChartPoint(x: 1, y: 2)]),
+      const XySeries(name: 'a', color: Colors.red, data: [ChartPoint(x: 1, y: 2)]),
+      const XySeries(name: 'a', color: Colors.red, data: [ChartPoint(x: 1, y: 2)]),
     );
     expect(
-      CategorySeries(name: 'a', color: Colors.red, values: [1, 2]),
-      isNot(CategorySeries(name: 'a', color: Colors.red, values: [1, 3])),
+      const CategorySeries(name: 'a', color: Colors.red, values: [1, 2]),
+      isNot(const CategorySeries(name: 'a', color: Colors.red, values: [1, 3])),
     );
   });
 }

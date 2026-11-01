@@ -6,6 +6,9 @@ import 'models.dart';
 import 'legend.dart';
 import 'theme.dart';
 import 'chart_chrome.dart';
+import 'common.dart';
+import 'cartesian_axes.dart';
+import 'controller.dart';
 
 /// Pinch/scroll zoom + pan state for [PieChart2D]. A pie has no axes, so
 /// there's no "range" to drag-select the way [LineChart2D]/[ScatterChart2D]/
@@ -48,6 +51,7 @@ class PieChart2D extends StatefulWidget {
   final String? subtitle;
   final String emptyStateMessage;
   final bool showLegend;
+  final ChartLegendPosition legendPosition;
   final bool showPercentageLabels;
   final String Function(double value)? valueFormatter;
 
@@ -58,6 +62,12 @@ class PieChart2D extends StatefulWidget {
   final bool enableZoom;
   final double minZoomScale;
   final double maxZoomScale;
+
+  /// Replaces the default tooltip card shown in the middle of the chart.
+  final ChartSliceTooltipBuilder? tooltipBuilder;
+
+  /// Reset pan/zoom or export an image from outside the chart.
+  final ChartController? controller;
 
   /// Fired continuously as the pointer moves over/off a slice (mouse hover
   /// and touch). Called with `null` when nothing is hovered.
@@ -74,6 +84,7 @@ class PieChart2D extends StatefulWidget {
     this.subtitle,
     this.emptyStateMessage = 'No data to display',
     this.showLegend = true,
+    this.legendPosition = ChartLegendPosition.bottom,
     this.showPercentageLabels = true,
     this.valueFormatter,
     this.enableAnimation = true,
@@ -81,6 +92,8 @@ class PieChart2D extends StatefulWidget {
     this.enableZoom = true,
     this.minZoomScale = 1.0,
     this.maxZoomScale = 4.0,
+    this.tooltipBuilder,
+    this.controller,
     this.onSliceHover,
     this.onSliceTap,
   });
@@ -89,7 +102,8 @@ class PieChart2D extends StatefulWidget {
   State<PieChart2D> createState() => _PieChart2DState();
 }
 
-class _PieChart2DState extends State<PieChart2D> with SingleTickerProviderStateMixin {
+class _PieChart2DState extends State<PieChart2D>
+    with SingleTickerProviderStateMixin, ChartControllerMixin<PieChart2D> {
   final ValueNotifier<Set<String>> _hiddenNotifier = ValueNotifier(const {});
   final ValueNotifier<String?> _hoveredLabelNotifier = ValueNotifier(null);
   final ValueNotifier<_PieViewState> _viewNotifier = ValueNotifier(const _PieViewState());
@@ -97,6 +111,12 @@ class _PieChart2DState extends State<PieChart2D> with SingleTickerProviderStateM
 
   double _gestureBaseScale = 1;
   Offset _gestureBaseTranslation = Offset.zero;
+
+  @override
+  ChartController? controllerOf(PieChart2D widget) => widget.controller;
+
+  @override
+  void resetZoom() => _viewNotifier.value = const _PieViewState();
 
   @override
   void initState() {
@@ -107,6 +127,7 @@ class _PieChart2DState extends State<PieChart2D> with SingleTickerProviderStateM
     } else {
       _controller.value = 1;
     }
+    _viewNotifier.addListener(() => reportZoomed(!_viewNotifier.value.isDefault));
   }
 
   @override
@@ -132,134 +153,135 @@ class _PieChart2DState extends State<PieChart2D> with SingleTickerProviderStateM
     final theme = ChartThemeScope.of(context);
 
     if (widget.slices.isEmpty) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          ChartHeader(title: widget.title, subtitle: widget.subtitle),
-          Expanded(child: ChartEmptyState(message: widget.emptyStateMessage)),
-        ],
+      return ChartFrame(
+        boundaryKey: chartBoundaryKey,
+        title: widget.title,
+        subtitle: widget.subtitle,
+        plot: ChartEmptyState(message: widget.emptyStateMessage),
       );
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        ChartHeader(title: widget.title, subtitle: widget.subtitle),
-        Expanded(
-          child: ValueListenableBuilder<Set<String>>(
-            valueListenable: _hiddenNotifier,
-            builder: (context, hidden, _) {
-              final visibleSlices = widget.slices.where((s) => !hidden.contains(s.label)).toList();
-              return Column(
-                children: [
-                  Expanded(
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        // Measure the plot area itself: the legend below can wrap to
-                        // several rows, so its height is not a fixed constant.
-                        final size = constraints.biggest;
-                        return Listener(
-                          onPointerSignal: widget.enableZoom
-                              ? (event) {
-                                  if (event is PointerScrollEvent) {
-                                    final view = _viewNotifier.value;
-                                    final newScale = (view.scale - event.scrollDelta.dy * 0.0025)
-                                        .clamp(widget.minZoomScale, widget.maxZoomScale);
-                                    _viewNotifier.value = _PieViewState(
-                                      scale: newScale,
-                                      translation: newScale <= widget.minZoomScale ? Offset.zero : view.translation,
-                                    );
-                                  }
-                                }
-                              : null,
-                          child: GestureDetector(
-                            onTapUp: (d) => _handleTap(d.localPosition, size, visibleSlices),
-                            onScaleStart: widget.enableZoom
-                                ? (d) {
-                                    final view = _viewNotifier.value;
-                                    _gestureBaseScale = view.scale;
-                                    _gestureBaseTranslation = view.translation;
-                                  }
-                                : null,
-                            onScaleUpdate: widget.enableZoom ? (d) => _handleScaleUpdate(d, size) : null,
-                            child: MouseRegion(
-                              onHover: (e) => _updateHover(e.localPosition, size, visibleSlices),
-                              onExit: (_) {
-                                _hoveredLabelNotifier.value = null;
-                                widget.onSliceHover?.call(null);
-                              },
-                              child: ValueListenableBuilder<_PieViewState>(
-                                valueListenable: _viewNotifier,
-                                builder: (context, view, _) {
-                                  return ValueListenableBuilder<String?>(
-                                    valueListenable: _hoveredLabelNotifier,
-                                    builder: (context, hoveredLabel, __) {
-                                      return ClipRect(
-                                        child: Stack(
-                                          alignment: Alignment.center,
-                                          children: [
-                                            Transform.translate(
-                                              offset: view.translation,
-                                              child: Transform.scale(
-                                                scale: view.scale,
-                                                child: AnimatedBuilder(
-                                                  animation: _controller,
-                                                  builder: (context, _) => CustomPaint(
-                                                    size: size,
-                                                    painter: _PieChartPainter(
-                                                      slices: visibleSlices,
-                                                      innerRadiusRatio: widget.innerRadiusRatio,
-                                                      showPercentageLabels: widget.showPercentageLabels,
-                                                      hoveredLabel: hoveredLabel,
-                                                      progress: _controller.value,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                            if (hoveredLabel != null)
-                                              _buildCenterTooltip(theme, hoveredLabel, visibleSlices),
-                                            if (!view.isDefault)
-                                              Positioned(
-                                                right: 8,
-                                                top: 8,
-                                                child: _ResetZoomButton(
-                                                  onTap: () => _viewNotifier.value = const _PieViewState(),
-                                                ),
-                                              ),
-                                          ],
+    return ChartFrame(
+      boundaryKey: chartBoundaryKey,
+      semanticLabel: describeChart(widget.innerRadiusRatio > 0 ? 'Donut chart' : 'Pie chart', widget.title, _sliceSummaries()),
+      title: widget.title,
+      subtitle: widget.subtitle,
+      legendPosition: widget.legendPosition,
+      legendBuilder: widget.showLegend ? _buildLegend : null,
+      plot: ValueListenableBuilder<Set<String>>(
+        valueListenable: _hiddenNotifier,
+        builder: (context, hidden, _) {
+          // Zero/negative values have no meaningful share of a pie.
+          final visibleSlices = widget.slices.where((s) => !hidden.contains(s.label) && s.value > 0).toList();
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              // Measure the plot area itself: the legend can wrap to several
+              // rows, so its size is not a fixed constant.
+              final size = constraints.biggest;
+              return Listener(
+                onPointerSignal: widget.enableZoom
+                    ? (event) {
+                        if (event is PointerScrollEvent) {
+                          final view = _viewNotifier.value;
+                          final newScale = (view.scale - event.scrollDelta.dy * 0.0025)
+                              .clamp(widget.minZoomScale, widget.maxZoomScale);
+                          _viewNotifier.value = _PieViewState(
+                            scale: newScale,
+                            translation: newScale <= widget.minZoomScale ? Offset.zero : view.translation,
+                          );
+                        }
+                      }
+                    : null,
+                child: GestureDetector(
+                  onTapUp: (d) => _handleTap(d.localPosition, size, visibleSlices),
+                  onScaleStart: widget.enableZoom
+                      ? (d) {
+                          final view = _viewNotifier.value;
+                          _gestureBaseScale = view.scale;
+                          _gestureBaseTranslation = view.translation;
+                        }
+                      : null,
+                  onScaleUpdate: widget.enableZoom ? (d) => _handleScaleUpdate(d, size) : null,
+                  child: MouseRegion(
+                    onHover: (e) => _updateHover(e.localPosition, size, visibleSlices),
+                    onExit: (_) {
+                      _hoveredLabelNotifier.value = null;
+                      widget.onSliceHover?.call(null);
+                    },
+                    child: ValueListenableBuilder<_PieViewState>(
+                      valueListenable: _viewNotifier,
+                      builder: (context, view, _) {
+                        return ValueListenableBuilder<String?>(
+                          valueListenable: _hoveredLabelNotifier,
+                          builder: (context, hoveredLabel, __) {
+                            return ClipRect(
+                              child: Stack(
+                                alignment: Alignment.center,
+                                children: [
+                                  Transform.translate(
+                                    offset: view.translation,
+                                    child: Transform.scale(
+                                      scale: view.scale,
+                                      child: AnimatedBuilder(
+                                        animation: _controller,
+                                        builder: (context, _) => CustomPaint(
+                                          size: size,
+                                          painter: _PieChartPainter(
+                                            slices: visibleSlices,
+                                            innerRadiusRatio: widget.innerRadiusRatio,
+                                            showPercentageLabels: widget.showPercentageLabels,
+                                            hoveredLabel: hoveredLabel,
+                                            progress: _controller.value,
+                                            fontFamily: theme.fontFamily,
+                                          ),
                                         ),
-                                      );
-                                    },
-                                  );
-                                },
+                                      ),
+                                    ),
+                                  ),
+                                  if (hoveredLabel != null) _buildCenterTooltip(theme, hoveredLabel, visibleSlices),
+                                  if (!view.isDefault)
+                                    Positioned(right: 8, top: 8, child: ChartResetZoomButton(theme: theme, onTap: resetZoom)),
+                                ],
                               ),
-                            ),
-                          ),
+                            );
+                          },
                         );
                       },
                     ),
                   ),
-                  if (widget.showLegend)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Chart2DLegend(
-                        entries: widget.slices.map((s) => LegendEntry(label: s.label, color: s.color)).toList(),
-                        hidden: hidden,
-                        onToggle: (label) {
-                          final next = {...hidden};
-                          next.contains(label) ? next.remove(label) : next.add(label);
-                          _hiddenNotifier.value = next;
-                          _hoveredLabelNotifier.value = null;
-                        },
-                      ),
-                    ),
-                ],
+                ),
               );
             },
-          ),
-        ),
-      ],
+          );
+        },
+      ),
+    );
+  }
+
+  List<String> _sliceSummaries() {
+    final positive = widget.slices.where((s) => s.value > 0);
+    final total = positive.fold<double>(0, (sum, s) => sum + s.value);
+    return [
+      for (final s in positive)
+        '${s.label}: ${widget.valueFormatter?.call(s.value) ?? Cartesian2DAxes.formatNumber(s.value)}'
+            ' (${total == 0 ? 0 : (s.value / total * 100).toStringAsFixed(1)}%)',
+    ];
+  }
+
+  Widget _buildLegend(Axis direction) {
+    return ValueListenableBuilder<Set<String>>(
+      valueListenable: _hiddenNotifier,
+      builder: (context, hidden, _) => Chart2DLegend(
+        direction: direction,
+        entries: widget.slices.map((s) => LegendEntry(label: s.label, color: s.color)).toList(),
+        hidden: hidden,
+        onToggle: (label) {
+          final next = {...hidden};
+          next.contains(label) ? next.remove(label) : next.add(label);
+          _hiddenNotifier.value = next;
+          _hoveredLabelNotifier.value = null;
+        },
+      ),
     );
   }
 
@@ -354,43 +376,13 @@ class _PieChart2DState extends State<PieChart2D> with SingleTickerProviderStateM
     final pct = total == 0 ? 0.0 : slice.value / total * 100;
     final valueText = widget.valueFormatter?.call(slice.value) ?? slice.value.toStringAsFixed(1);
 
+    final custom = widget.tooltipBuilder;
+    if (custom != null) return IgnorePointer(child: custom(context, slice, pct));
     return IgnorePointer(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: theme.tooltipBackgroundColor,
-          borderRadius: BorderRadius.circular(8),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 8)],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(slice.label, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: theme.tooltipTextColor)),
-            Text('$valueText  (${pct.toStringAsFixed(1)}%)',
-                style: TextStyle(fontSize: 11, color: theme.tooltipTextColor.withOpacity(0.8))),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ResetZoomButton extends StatelessWidget {
-  final VoidCallback onTap;
-  const _ResetZoomButton({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.grey.shade100,
-      borderRadius: BorderRadius.circular(8),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: onTap,
-        child: const Padding(
-          padding: EdgeInsets.all(6),
-          child: Icon(Icons.zoom_out_map, size: 18),
-        ),
+      child: ChartTooltipCard(
+        theme: theme,
+        title: slice.label,
+        subtitle: '$valueText  (${pct.toStringAsFixed(1)}%)',
       ),
     );
   }
@@ -404,6 +396,7 @@ class _PieChartPainter extends CustomPainter {
 
   /// 0 (collapsed at center) to 1 (full radius) — drives the entrance animation.
   final double progress;
+  final String? fontFamily;
 
   _PieChartPainter({
     required this.slices,
@@ -411,6 +404,7 @@ class _PieChartPainter extends CustomPainter {
     required this.showPercentageLabels,
     required this.hoveredLabel,
     required this.progress,
+    this.fontFamily,
   });
 
   @override
@@ -467,7 +461,7 @@ class _PieChartPainter extends CustomPainter {
     final painter = TextPainter(
       text: TextSpan(
         text: text,
-        style: TextStyle(color: Colors.white.withOpacity(opacity), fontSize: 11, fontWeight: FontWeight.w700),
+        style: TextStyle(color: Colors.white.withValues(alpha: opacity), fontSize: 11, fontWeight: FontWeight.w700, fontFamily: fontFamily),
       ),
       textDirection: TextDirection.ltr,
     );

@@ -1,9 +1,12 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'geometry.dart';
 import 'painter.dart';
 import 'chart_controller.dart';
 import 'legend.dart';
+import 'chart2d/theme.dart';
+import 'chart2d/common.dart';
 
 /// Info passed to [Surface3DChart.tooltipBuilder] describing whichever tile
 /// is currently hovered/tapped.
@@ -109,6 +112,22 @@ class Surface3DChart extends StatefulWidget {
   /// toolbar instead of the built-in button).
   final Surface3DChartController? controller;
 
+  /// Scale and centre the chart to fill its box at any size, pushing the
+  /// camera back for large grids so perspective stays natural. With this
+  /// on, [initialZoom] is relative: 16 fills the box, 32 is 2× closer.
+  /// Set false for the pre-0.1 fixed scale (useful if you tuned zoom values
+  /// for a specific size).
+  final bool fitToSize;
+
+  /// Filled tiles, or a see-through colored mesh.
+  final SurfaceRenderMode renderMode;
+
+  /// Draw contour lines (lines of equal value) on the floor under the surface.
+  final bool showContours;
+
+  /// How many contour levels to draw, evenly spaced between min and max.
+  final int contourLevels;
+
   const Surface3DChart({
     super.key,
     required this.data,
@@ -124,8 +143,8 @@ class Surface3DChart extends StatefulWidget {
     this.referenceColIndex,
     this.referenceLabel,
     this.tooltipBuilder,
-    this.initialRotationX = -0.6,
-    this.initialRotationY = 0.8,
+    this.initialRotationX = 0.6,
+    this.initialRotationY = -0.7,
     this.initialZoom = 16,
     this.cellSpacing = 45.0,
     this.maxSurfaceHeight = 130,
@@ -136,8 +155,11 @@ class Surface3DChart extends StatefulWidget {
     this.legendTitle,
     this.legendOrientation = Axis.vertical,
     this.controller,
-  })  : assert(gradient.length >= 2, 'gradient needs at least 2 colors'),
-        assert(data.length >= 2, 'need at least 2 rows');
+    this.fitToSize = true,
+    this.renderMode = SurfaceRenderMode.solid,
+    this.showContours = false,
+    this.contourLevels = 8,
+  }) : assert(contourLevels > 0);
 
   @override
   State<Surface3DChart> createState() => Surface3DChartState();
@@ -255,12 +277,55 @@ class Surface3DChartState extends State<Surface3DChart> {
   }
 
   Projector _projectorFor(Size size, Surface3DViewState view) {
-    return Projector(
+    if (!widget.fitToSize) {
+      return Projector(
+        rotationX: view.rotationX,
+        rotationY: view.rotationY,
+        zoom: view.zoom,
+        center: Offset(size.width / 2, size.height / 2 + 60),
+      );
+    }
+    final rows = widget.data.length, cols = widget.data[0].length;
+    final zScale = _zScale;
+    final (lo, hi) = _valueRange;
+    // Grid points span (index - n/2) * spacing; the axes reach ~1 cell beyond.
+    final s = widget.cellSpacing;
+    return fitProjector(
+      area: _plotArea(size),
       rotationX: view.rotationX,
       rotationY: view.rotationY,
       zoom: view.zoom,
-      center: Offset(size.width / 2, size.height / 2 + 60),
+      xMin: (-0.6 - cols / 2) * s,
+      xMax: (cols - 1 + 0.6 - cols / 2) * s,
+      yMin: (-0.6 - rows / 2) * s,
+      yMax: (rows - 1 + 0.6 - rows / 2) * s,
+      zMin: math.min(0.0, lo * zScale),
+      zMax: math.max(0.0, hi * zScale),
+      fitRotationX: widget.initialRotationX,
+      fitRotationY: widget.initialRotationY,
+      defaultZoom: 16,
+      margin: 40,
     );
+  }
+
+  /// The part of the chart the surface should fit into — the whole box,
+  /// minus room for the built-in legend when it's shown.
+  Rect _plotArea(Size size) {
+    var area = Offset.zero & size;
+    if (!widget.showLegend) return area;
+    final a = widget.legendAlignment;
+    if (widget.legendOrientation == Axis.vertical) {
+      const legendWidth = 96.0;
+      area = a.x <= 0
+          ? Rect.fromLTRB(area.left + legendWidth, area.top, area.right, area.bottom)
+          : Rect.fromLTRB(area.left, area.top, area.right - legendWidth, area.bottom);
+    } else {
+      const legendHeight = 72.0;
+      area = a.y <= 0
+          ? Rect.fromLTRB(area.left, area.top + legendHeight, area.right, area.bottom)
+          : Rect.fromLTRB(area.left, area.top, area.right, area.bottom - legendHeight);
+    }
+    return area;
   }
 
   void _updateHover(Offset localPos, Size size) {
@@ -286,7 +351,19 @@ class Surface3DChartState extends State<Surface3DChart> {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
+    // Checked here, not in the constructor, so `const Surface3DChart(...)` compiles.
+    assert(widget.gradient.length >= 2, 'gradient needs at least 2 colors');
+    assert(widget.data.length >= 2 && widget.data.every((r) => r.length >= 2), 'need at least a 2×2 grid');
+    final theme = ChartThemeScope.of(context);
+    final (lo, hi) = _valueRange;
+    return Semantics(
+      container: true,
+      label: describeChart('3D surface chart', widget.zAxisTitle, [
+        '${widget.data.length} ${widget.yAxisTitle.isEmpty ? 'rows' : widget.yAxisTitle} by '
+            '${widget.data[0].length} ${widget.xAxisTitle.isEmpty ? 'columns' : widget.xAxisTitle}',
+        'values from ${widget.valueFormatter(lo)} to ${widget.valueFormatter(hi)}',
+      ]),
+      child: LayoutBuilder(
       builder: (context, constraints) {
         final size = constraints.biggest;
         return Listener(
@@ -353,17 +430,21 @@ class Surface3DChartState extends State<Surface3DChart> {
                           zScale: _zScale,
                           projector: _projectorFor(size, view),
                           highlightedQuad: view.hoveredQuad,
+                          theme: theme,
                           referenceColIndex: widget.referenceColIndex,
                           referenceLabel: widget.referenceLabel,
+                          renderMode: widget.renderMode,
+                          showContours: widget.showContours,
+                          contourLevels: widget.contourLevels,
                         ),
                       ),
                       if (view.hoveredQuad != null && view.pointerPos != null)
-                        _buildTooltip(view.hoveredQuad!, view.pointerPos!, size),
+                        _buildTooltip(view.hoveredQuad!, view.pointerPos!, size, theme),
                       if (widget.showResetButton)
                         Positioned(
                           right: 8,
                           top: 8,
-                          child: _buildResetButton(),
+                          child: ChartResetZoomButton(theme: theme, icon: Icons.refresh, onTap: resetView),
                         ),
                       if (widget.showLegend) _buildLegend(),
                     ],
@@ -374,6 +455,7 @@ class Surface3DChartState extends State<Surface3DChart> {
           ),
         );
       },
+    ),
     );
   }
 
@@ -400,22 +482,7 @@ class Surface3DChartState extends State<Surface3DChart> {
     );
   }
 
-  Widget _buildResetButton() {
-    return Material(
-      color: Colors.grey.shade100,
-      borderRadius: BorderRadius.circular(8),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: resetView,
-        child: const Padding(
-          padding: EdgeInsets.all(6),
-          child: Icon(Icons.refresh, size: 20),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTooltip(SurfaceQuad quad, Offset pos, Size size) {
+  Widget _buildTooltip(SurfaceQuad quad, Offset pos, Size size, ChartTheme theme) {
     final hit = Surface3DHit(
       colIndex: quad.colIndex,
       rowIndex: quad.rowIndex,
@@ -432,42 +499,16 @@ class Surface3DChartState extends State<Surface3DChart> {
       );
     }
 
-    const cardWidth = 190.0;
-    double left = pos.dx + 16;
-    double top = pos.dy - 70;
-    if (left + cardWidth > size.width) left = pos.dx - cardWidth - 16;
-    if (top < 0) top = 8;
-
-    return Positioned(
-      left: left,
-      top: top,
-      child: IgnorePointer(
-        child: Container(
-          width: cardWidth,
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(10),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.12),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(hit.xLabel, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-              const SizedBox(height: 4),
-              Text('${widget.zAxisTitle}  ${widget.valueFormatter(hit.value)}',
-                  style: const TextStyle(fontSize: 13)),
-              Text('${widget.yAxisTitle}  ${hit.yLabel}',
-                  style: const TextStyle(fontSize: 13, color: Colors.black54)),
-            ],
-          ),
-        ),
+    return positionChartTooltip(
+      anchor: pos,
+      areaSize: size,
+      cardWidth: 190,
+      child: ChartTooltipCard(
+        theme: theme,
+        width: 190,
+        title: hit.xLabel,
+        subtitle: '${widget.yAxisTitle}  ${hit.yLabel}',
+        value: '${widget.zAxisTitle}  ${widget.valueFormatter(hit.value)}',
       ),
     );
   }

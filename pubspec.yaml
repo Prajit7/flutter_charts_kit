@@ -1,18 +1,29 @@
 name: flutter_charts_kit
-description: A generic, interactive 3D surface chart widget for Flutter — rotate, zoom, hover/tap tooltips, calibrated color gradients.
-version: 0.0.4
+description: Interactive 2D and 3D charts for Flutter with zero dependencies — line, bar, combo, pie, scatter, heatmap, candlestick, radar, gauge, treemap, Sankey, 3D surface/bars/scatter and more.
+version: 0.1.0
 homepage: https://github.com/prajit7/flutter_charts_kit
 repository: https://github.com/prajit7/flutter_charts_kit
 issue_tracker: https://github.com/prajit7/flutter_charts_kit/issues
 topics:
   - chart
-  - three-dimensional
+  - charts
   - visualization
+  - three-dimensional
   - widgets
 
+screenshots:
+  - description: Trading chart with SMA, EMA, Bollinger Bands, RSI, MACD and a live last-price tag.
+    path: example/assets/trading.png
+  - description: 2D charts — line, stacked area, combo, horizontal bar, donut and scatter.
+    path: example/assets/2d.png
+  - description: 3D surface, wireframe with contours, 3D bars and 3D scatter.
+    path: example/assets/3d.png
+  - description: Heatmap, candlestick, radar, histogram, box plot, gauges, funnel, treemap and Sankey.
+    path: example/assets/more.png
+
 environment:
-  sdk: '>=3.0.0 <4.0.0'
-  flutter: ">=3.10.0"
+  sdk: '>=3.6.0 <4.0.0'
+  flutter: ">=3.27.0"
 
 dependencies:
   flutter:

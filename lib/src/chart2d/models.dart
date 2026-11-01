@@ -16,6 +16,13 @@ class ChartPoint {
 
   const ChartPoint({required this.x, required this.y, this.label, this.size});
 
+  /// A point on a time x-axis: [x] is [time] in milliseconds since epoch.
+  /// Use with `xAxisType: ChartAxisType.time` on the chart.
+  ChartPoint.at(DateTime time, {required this.y, this.label, this.size}) : x = time.millisecondsSinceEpoch.toDouble();
+
+  /// [x] read back as a [DateTime] (meaningful for points made with [ChartPoint.at]).
+  DateTime get time => DateTime.fromMillisecondsSinceEpoch(x.round());
+
   @override
   bool operator ==(Object other) =>
       other is ChartPoint && other.x == x && other.y == y && other.label == label && other.size == size;
@@ -73,6 +80,41 @@ class PieSlice {
   @override
   int get hashCode => Object.hash(label, value, color);
 }
+
+/// What a chart does when its data changes after the first build.
+enum ChartUpdateAnimation {
+  /// Animate each value from where it was to where it is now (when the
+  /// series keeps its name and point count; otherwise update instantly).
+  /// Zoom is kept.
+  morph,
+
+  /// Replay the entrance animation and reset zoom — the pre-0.1 behavior.
+  replay,
+
+  /// Update instantly and keep zoom — best for streaming data.
+  none,
+}
+
+/// How a chart interprets [ChartPoint.x].
+enum ChartAxisType {
+  /// Plain numbers.
+  numeric,
+
+  /// Milliseconds since epoch (see [ChartPoint.at]) — ticks fall on calendar
+  /// boundaries and are labelled as dates/times.
+  time,
+}
+
+/// Builds a custom tooltip for a hovered/tapped point in [LineChart2D] or
+/// [ScatterChart2D].
+typedef ChartPointTooltipBuilder = Widget Function(BuildContext context, String series, ChartPoint point);
+
+/// Builds a custom tooltip for a hovered/tapped bar in [BarChart2D].
+typedef ChartBarTooltipBuilder = Widget Function(BuildContext context, String series, String category, double value);
+
+/// Builds a custom tooltip for a hovered/tapped slice in [PieChart2D].
+/// [percent] is the slice's share of the visible total, 0–100.
+typedef ChartSliceTooltipBuilder = Widget Function(BuildContext context, PieSlice slice, double percent);
 
 /// A generic (label, color) pair rendered by [Chart2DLegend].
 class LegendEntry {

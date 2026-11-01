@@ -39,7 +39,7 @@ class Chart2DLegend extends StatelessWidget {
                 width: 10,
                 height: 10,
                 decoration: BoxDecoration(
-                  color: isHidden ? theme.tickTextColor.withOpacity(0.3) : e.color,
+                  color: isHidden ? theme.tickTextColor.withValues(alpha: 0.3) : e.color,
                   shape: BoxShape.circle,
                 ),
               ),
@@ -49,7 +49,7 @@ class Chart2DLegend extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 12,
                   fontFamily: theme.fontFamily,
-                  color: isHidden ? theme.tickTextColor.withOpacity(0.5) : theme.axisColor,
+                  color: isHidden ? theme.tickTextColor.withValues(alpha: 0.5) : theme.axisColor,
                   decoration: isHidden ? TextDecoration.lineThrough : null,
                 ),
               ),

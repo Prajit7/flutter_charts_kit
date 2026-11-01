@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'chart2d/theme.dart';
 
 /// A color-scale legend — a gradient bar with min/max (and optional
 /// in-between) value labels. Works standalone, or embedded automatically
@@ -54,15 +55,19 @@ class Surface3DLegend extends StatelessWidget {
     this.intermediateTicks = 2,
     this.labelStyle,
     this.titleStyle,
-  }) : assert(gradient.length >= 2, 'gradient needs at least 2 colors');
+  });
 
   @override
   Widget build(BuildContext context) {
+    // Checked here, not in the constructor: a list's length can't be read
+    // in a const constructor's assert, which would break `const` usage.
+    assert(gradient.length >= 2, 'gradient needs at least 2 colors');
+    final theme = ChartThemeScope.of(context);
     final isVertical = orientation == Axis.vertical;
     final resolvedLabelStyle =
-        labelStyle ?? const TextStyle(fontSize: 10, color: Colors.black54);
+        labelStyle ?? TextStyle(fontSize: 10, color: theme.tickTextColor, fontFamily: theme.fontFamily);
     final resolvedTitleStyle = titleStyle ??
-        const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.black87);
+        TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: theme.titleColor, fontFamily: theme.fontFamily);
 
     // Build tick fractions from high to low for vertical (top = max),
     // low to high for horizontal (left = min).
@@ -74,7 +79,7 @@ class Surface3DLegend extends StatelessWidget {
       height: isVertical ? length : thickness,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: Colors.black12, width: 0.5),
+        border: Border.all(color: theme.gridColor, width: 0.5),
         gradient: LinearGradient(
           begin: isVertical ? Alignment.bottomCenter : Alignment.centerLeft,
           end: isVertical ? Alignment.topCenter : Alignment.centerRight,
@@ -128,10 +133,10 @@ class Surface3DLegend extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.92),
+        color: theme.tooltipBackgroundColor.withValues(alpha: 0.92),
         borderRadius: BorderRadius.circular(10),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 8, offset: const Offset(0, 2)),
+          BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 8, offset: const Offset(0, 2)),
         ],
       ),
       child: Column(

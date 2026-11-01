@@ -15,34 +15,39 @@ class Projector {
   final double zoom;
   final Offset center;
 
+  /// Distance from the camera to the model's origin, in model units. Must
+  /// comfortably exceed the model's radius, or near points blow up.
+  final double cameraDistance;
+
   const Projector({
     required this.rotationX,
     required this.rotationY,
     required this.zoom,
     required this.center,
+    this.cameraDistance = 700,
   });
 
   /// Rotated point, pre-perspective. Useful for depth sorting.
+  ///
+  /// A turntable camera: [rotationY] spins the model about its vertical
+  /// (z) axis, then [rotationX] tilts it toward the viewer. Vertical lines
+  /// in the model stay vertical on screen at every angle.
   Point3D rotate(Point3D p) {
-    double x = p.x, y = p.y, z = p.z;
+    // Spin about the vertical axis.
+    final cy = math.cos(rotationY), sy = math.sin(rotationY);
+    final x = p.x * cy - p.y * sy;
+    final y0 = p.x * sy + p.y * cy;
 
-    final y1 = y * math.cos(rotationX) - z * math.sin(rotationX);
-    final z1 = y * math.sin(rotationX) + z * math.cos(rotationX);
-    y = y1;
-    z = z1;
-
-    final x1 = x * math.cos(rotationY) + z * math.sin(rotationY);
-    final z2 = -x * math.sin(rotationY) + z * math.cos(rotationY);
-    x = x1;
-    z = z2;
-
+    // Tilt: positive rotationX looks down onto the floor; up (+z) is up-screen.
+    final cx = math.cos(rotationX), sx = math.sin(rotationX);
+    final y = y0 * sx - p.z * cx;
+    final z = y0 * cx + p.z * sx;
     return Point3D(x, y, z);
   }
 
   Offset project(Point3D p) {
     final r = rotate(p);
-    const camera = 700.0;
-    final perspective = camera / (camera - r.z);
+    final perspective = cameraDistance / (cameraDistance - r.z);
     return Offset(
       center.dx + r.x * perspective * zoom / 20,
       center.dy + r.y * perspective * zoom / 20,
@@ -147,4 +152,59 @@ class SurfaceGeometry {
     quads.sort((a, b) => a.depth.compareTo(b.depth));
     return quads;
   }
+}
+
+/// A [Projector] that fits a model's bounding box — `x ∈ [xMin, xMax]`,
+/// `y ∈ [yMin, yMax]`, `z ∈ [zMin, zMax]` in model space — into [area], leaving
+/// [margin] pixels around it for axis labels.
+///
+/// The scale is measured at the fit rotation ([fitRotationX]/[fitRotationY],
+/// typically the chart's initial view) so it stays constant while the user
+/// rotates; the model is re-centred in [area] at every rotation.
+///
+/// [zoom] is relative to [defaultZoom]: at `zoom == defaultZoom` the model
+/// fills the area; double it to zoom in 2×. The camera is pushed back in
+/// proportion to the model's size, so large grids keep natural perspective.
+Projector fitProjector({
+  required Rect area,
+  required double rotationX,
+  required double rotationY,
+  required double zoom,
+  required double xMin,
+  required double xMax,
+  required double yMin,
+  required double yMax,
+  required double zMin,
+  required double zMax,
+  double? fitRotationX,
+  double? fitRotationY,
+  double defaultZoom = 16,
+  double margin = 28,
+}) {
+  final corners = [
+    for (final x in [xMin, xMax])
+      for (final y in [yMin, yMax])
+        for (final z in [zMin, zMax]) Point3D(x, y, z),
+  ];
+  // The camera distance must exceed the farthest corner from the origin
+  // (the rotation centre), not just the box's own half-diagonal.
+  final radius = corners.map((c) => math.sqrt(c.x * c.x + c.y * c.y + c.z * c.z)).reduce(math.max);
+  final camera = math.max(700.0, radius * 3);
+
+  // Projected bounds of the box at unit scale (zoom 20 = 1px per unit).
+  Rect bounds(double rx, double ry) {
+    final p = Projector(rotationX: rx, rotationY: ry, zoom: 20, center: Offset.zero, cameraDistance: camera);
+    final pts = corners.map(p.project).toList();
+    return Rect.fromLTRB(pts.map((o) => o.dx).reduce(math.min), pts.map((o) => o.dy).reduce(math.min),
+        pts.map((o) => o.dx).reduce(math.max), pts.map((o) => o.dy).reduce(math.max));
+  }
+
+  final fit = bounds(fitRotationX ?? rotationX, fitRotationY ?? rotationY);
+  final availW = math.max(1.0, area.width - 2 * margin), availH = math.max(1.0, area.height - 2 * margin);
+  final scale = math.min(availW / math.max(fit.width, 1), availH / math.max(fit.height, 1)) * (zoom / defaultZoom);
+
+  // Centre the current view's projected box in the area.
+  final now = bounds(rotationX, rotationY);
+  final center = area.center - now.center * scale;
+  return Projector(rotationX: rotationX, rotationY: rotationY, zoom: scale * 20, center: center, cameraDistance: camera);
 }

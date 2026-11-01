@@ -1,6 +1,19 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'geometry.dart';
+import 'grid_axes3d.dart';
+import 'chart2d/common.dart';
+import 'chart2d/theme.dart';
+
+/// How [Surface3DChart] draws its surface.
+enum SurfaceRenderMode {
+  /// Filled tiles colored by value, with a light mesh.
+  solid,
+
+  /// Only the mesh lines, colored by value — see-through, so nothing hides
+  /// behind peaks.
+  wireframe,
+}
 
 class Surface3DPainter extends CustomPainter {
   final List<List<double>> data;
@@ -18,10 +31,20 @@ class Surface3DPainter extends CustomPainter {
   final Projector projector;
   final SurfaceQuad? highlightedQuad;
 
+  /// Colors and fonts for the axes, labels, and floor grid. The surface
+  /// itself is always colored by [gradient].
+  final ChartTheme theme;
+
   /// Optional vertical reference line (e.g. "current price", "today") drawn
   /// through a specific column index, with a label at the top.
   final int? referenceColIndex;
   final String? referenceLabel;
+
+  final SurfaceRenderMode renderMode;
+
+  /// Draw contour lines (lines of equal value) projected onto the floor.
+  final bool showContours;
+  final int contourLevels;
 
   Surface3DPainter({
     required this.data,
@@ -38,215 +61,145 @@ class Surface3DPainter extends CustomPainter {
     this.fixedMin,
     this.fixedMax,
     this.highlightedQuad,
+    this.theme = ChartTheme.light,
     this.referenceColIndex,
     this.referenceLabel,
+    this.renderMode = SurfaceRenderMode.solid,
+    this.showContours = false,
+    this.contourLevels = 8,
   });
+
+  (double, double) get _range {
+    if (fixedMin != null && fixedMax != null) return (fixedMin!, fixedMax!);
+    double lo = double.infinity, hi = -double.infinity;
+    for (final row in data) {
+      for (final v in row) {
+        lo = math.min(lo, v);
+        hi = math.max(hi, v);
+      }
+    }
+    return (lo, hi);
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
-    final geometry = SurfaceGeometry(
-      data: data,
+    final quads = SurfaceGeometry(data: data, spacing: spacing, zScale: zScale, projector: projector).buildQuads();
+    final (minV, maxV) = _range;
+    final axes = GridAxes3D(
+      rows: data.length,
+      cols: data[0].length,
       spacing: spacing,
       zScale: zScale,
       projector: projector,
+      theme: theme,
+      xLabels: xLabels,
+      yLabels: yLabels,
+      xAxisTitle: xAxisTitle,
+      yAxisTitle: yAxisTitle,
+      zAxisTitle: zAxisTitle,
+      valueFormatter: valueFormatter,
+      minValue: minV,
+      maxValue: maxV,
     );
-    final quads = geometry.buildQuads();
 
-    double minV, maxV;
-    if (fixedMin != null && fixedMax != null) {
-      minV = fixedMin!;
-      maxV = fixedMax!;
-    } else {
-      minV = double.infinity;
-      maxV = -double.infinity;
-      for (final row in data) {
-        for (final v in row) {
-          if (v < minV) minV = v;
-          if (v > maxV) maxV = v;
-        }
+    axes.drawFloor(canvas);
+    axes.drawBackAxis(canvas);
+    if (showContours) _drawContours(canvas, axes, minV, maxV);
+    if (referenceColIndex != null) axes.drawReferenceColumn(canvas, referenceColIndex!, referenceLabel);
+
+    Color colorFor(double v) => sampleGradient(gradient, maxV == minV ? 0.5 : (v - minV) / (maxV - minV));
+    if (renderMode == SurfaceRenderMode.solid) {
+      final fill = Paint()..style = PaintingStyle.fill;
+      final mesh = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 0.8
+        ..color = Colors.white.withValues(alpha: 0.7);
+      for (final q in quads) {
+        fill.color = colorFor(q.value);
+        canvas.drawPath(q.path, fill);
+        canvas.drawPath(q.path, mesh);
       }
-    }
-
-    // Model-space height of the z-axis: surface points sit at
-    // `value * zScale`, so the axis must use the same mapping.
-    final zTop = math.max(0.0, maxV * zScale);
-
-    _drawFloorGrid(canvas, geometry);
-    if (referenceColIndex != null) {
-      _drawReferenceLine(canvas, referenceColIndex!, zTop);
-    }
-
-    final fill = Paint()..style = PaintingStyle.fill;
-    final mesh = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.8
-      ..color = Colors.white.withOpacity(0.7);
-    final highlightStroke = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.2
-      ..color = Colors.black87;
-
-    for (final q in quads) {
-      final t = maxV == minV ? 0.5 : (q.value - minV) / (maxV - minV);
-      fill.color = _gradientColor(t.clamp(0.0, 1.0));
-      canvas.drawPath(q.path, fill);
-      canvas.drawPath(q.path, mesh);
+    } else {
+      final line = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.2;
+      for (final q in quads) {
+        line.color = colorFor(q.value);
+        canvas.drawPath(q.path, line);
+      }
     }
 
     if (highlightedQuad != null) {
-      canvas.drawPath(highlightedQuad!.path, highlightStroke);
-    }
-
-    _drawAxes(canvas, minV, maxV, zTop);
-  }
-
-  Color _gradientColor(double t) {
-    final scaled = t * (gradient.length - 1);
-    final idx = scaled.floor().clamp(0, gradient.length - 2);
-    final frac = scaled - idx;
-    return Color.lerp(gradient[idx], gradient[idx + 1], frac)!;
-  }
-
-  void _drawFloorGrid(Canvas canvas, SurfaceGeometry geometry) {
-    final gridPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.6
-      ..color = Colors.grey.withOpacity(0.25);
-
-    final rows = data.length;
-    final cols = data[0].length;
-
-    for (int r = 0; r < rows; r++) {
-      final p1 = Point3D((0 - cols / 2) * spacing, (r - rows / 2) * spacing, 0);
-      final p2 = Point3D((cols - 1 - cols / 2) * spacing, (r - rows / 2) * spacing, 0);
-      _drawDashedLine(canvas, projector.project(p1), projector.project(p2), gridPaint);
-    }
-    for (int c = 0; c < cols; c++) {
-      final p1 = Point3D((c - cols / 2) * spacing, (0 - rows / 2) * spacing, 0);
-      final p2 = Point3D((c - cols / 2) * spacing, (rows - 1 - rows / 2) * spacing, 0);
-      _drawDashedLine(canvas, projector.project(p1), projector.project(p2), gridPaint);
-    }
-  }
-
-  void _drawReferenceLine(Canvas canvas, int colIndex, double zTop) {
-    final rows = data.length;
-    final cols = data[0].length;
-    final x = (colIndex - cols / 2) * spacing;
-
-    final top = Point3D(x, (0 - rows / 2) * spacing, zTop + 30);
-    final bottom = Point3D(x, (rows - 1 - rows / 2) * spacing, 0);
-
-    final linePaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1
-      ..color = Colors.black45;
-
-    _drawDashedLine(canvas, projector.project(top), projector.project(bottom), linePaint);
-
-    if (referenceLabel != null) {
-      final labelPos = projector.project(Point3D(x, (0 - rows / 2) * spacing, zTop + 45));
-      _drawText(canvas, referenceLabel!, Offset(labelPos.dx - 40, labelPos.dy - 14),
-          Colors.black87, size: 11);
-    }
-  }
-
-  void _drawDashedLine(Canvas canvas, Offset a, Offset b, Paint paint) {
-    const dashLength = 4.0;
-    const gapLength = 3.0;
-    final total = (b - a).distance;
-    if (total == 0) return;
-    final direction = (b - a) / total;
-    double drawn = 0;
-    while (drawn < total) {
-      final segEnd = math.min(drawn + dashLength, total);
-      canvas.drawLine(a + direction * drawn, a + direction * segEnd, paint);
-      drawn += dashLength + gapLength;
-    }
-  }
-
-  void _drawAxes(Canvas canvas, double minV, double maxV, double zTop) {
-    final axisPaint = Paint()
-      ..color = Colors.black87
-      ..strokeWidth = 1.4;
-    final tickPaint = Paint()
-      ..color = Colors.grey.shade500
-      ..strokeWidth = 1;
-
-    final rows = data.length;
-    final cols = data[0].length;
-
-    final origin = Point3D((0 - cols / 2) * spacing - spacing * 0.6,
-        (rows - 1 - rows / 2) * spacing + spacing * 0.6, 0);
-    final o = projector.project(origin);
-
-    // ---------------- X AXIS ----------------
-    final xEnd = Point3D(origin.x + (cols + 0.6) * spacing, origin.y, 0);
-    canvas.drawLine(o, projector.project(xEnd), axisPaint);
-
-    for (int c = 0; c < cols; c++) {
-      final p = projector.project(
-        Point3D(origin.x + spacing * 0.6 + c * spacing, origin.y, 0),
+      canvas.drawPath(
+        highlightedQuad!.path,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.2
+          ..color = theme.axisColor,
       );
-      canvas.drawLine(Offset(p.dx, p.dy - 4), Offset(p.dx, p.dy + 4), tickPaint);
-      if (c % _labelStride(cols) == 0) {
-        _drawText(canvas, xLabels[c], Offset(p.dx - 18, p.dy + 8), Colors.black54, size: 10);
+    }
+
+    axes.drawFrontAxes(canvas);
+  }
+
+  /// Contour lines on the floor via marching squares over each grid cell.
+  void _drawContours(Canvas canvas, GridAxes3D axes, double minV, double maxV) {
+    if (maxV <= minV || data.length < 2 || data[0].length < 2) return;
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2;
+    Offset project(double c, double r) => projector.project(Point3D(axes.colX(c), axes.rowY(r), 0));
+
+    for (int k = 1; k <= contourLevels; k++) {
+      final t = k / (contourLevels + 1);
+      final level = minV + t * (maxV - minV);
+      paint.color = sampleGradient(gradient, t).withValues(alpha: 0.9);
+      for (final (a, b) in contourSegments(data, level)) {
+        canvas.drawLine(project(a.dx, a.dy), project(b.dx, b.dy), paint);
       }
     }
-    final xEndProj = projector.project(xEnd);
-    _drawText(canvas, xAxisTitle, Offset(xEndProj.dx - 10, xEndProj.dy + 20),
-        Colors.black87, size: 13);
-
-    // ---------------- Y AXIS ----------------
-    final yEnd = Point3D(origin.x, origin.y - (rows + 0.6) * spacing, 0);
-    canvas.drawLine(o, projector.project(yEnd), axisPaint);
-
-    for (int r = 0; r < rows; r++) {
-      final p = projector.project(
-        Point3D(origin.x, (r - rows / 2) * spacing, 0),
-      );
-      canvas.drawLine(Offset(p.dx - 4, p.dy), Offset(p.dx + 4, p.dy), tickPaint);
-      _drawText(canvas, yLabels[r], Offset(p.dx - 60, p.dy - 4), Colors.black54, size: 10);
-    }
-    final yEndProj = projector.project(yEnd);
-    _drawText(canvas, yAxisTitle, Offset(yEndProj.dx - 60, yEndProj.dy - 16),
-        Colors.black87, size: 13);
-
-    // ---------------- Z AXIS ----------------
-    final zBottom = math.min(0.0, minV * zScale);
-    final zEnd = Point3D(origin.x, origin.y, zTop);
-    canvas.drawLine(projector.project(Point3D(origin.x, origin.y, zBottom)), projector.project(zEnd), axisPaint);
-
-    const levels = 5;
-    for (int i = 0; i <= levels; i++) {
-      final frac = i / levels;
-      final value = minV + frac * (maxV - minV);
-      // same mapping as SurfaceGeometry.gridPoint, so ticks line up with the surface
-      final z = value * zScale;
-      final p = projector.project(Point3D(origin.x, origin.y, z));
-      canvas.drawLine(Offset(p.dx - 4, p.dy), Offset(p.dx + 4, p.dy), tickPaint);
-      _drawText(canvas, valueFormatter(value), Offset(p.dx - 46, p.dy - 4),
-          Colors.black54, size: 10);
-    }
-    final zEndProj = projector.project(zEnd);
-    _drawText(canvas, zAxisTitle, Offset(zEndProj.dx - 10, zEndProj.dy - 18),
-        Colors.black87, size: 13);
-  }
-
-  /// Skip labels if there are too many columns to fit legibly.
-  int _labelStride(int cols) => cols > 12 ? 2 : 1;
-
-  void _drawText(Canvas canvas, String text, Offset position, Color color, {double size = 12}) {
-    final painter = TextPainter(
-      text: TextSpan(
-        text: text,
-        style: TextStyle(color: color, fontSize: size, fontWeight: FontWeight.w600),
-      ),
-      textDirection: TextDirection.ltr,
-    );
-    painter.layout();
-    painter.paint(canvas, position);
   }
 
   @override
   bool shouldRepaint(covariant Surface3DPainter oldDelegate) => true;
+}
+
+/// Line segments where `data[row][col]` crosses [level], in grid
+/// coordinates `(col, row)` — one marching-squares pass over every cell.
+List<(Offset, Offset)> contourSegments(List<List<double>> data, double level) {
+  final segments = <(Offset, Offset)>[];
+  for (int r = 0; r < data.length - 1; r++) {
+    for (int c = 0; c < data[r].length - 1 && c < data[r + 1].length - 1; c++) {
+      final tl = data[r][c], tr = data[r][c + 1], br = data[r + 1][c + 1], bl = data[r + 1][c];
+      final pts = <Offset>[];
+      // Edges in order: top, right, bottom, left.
+      void edge(double a, double b, Offset from, Offset to) {
+        if ((a < level) == (b < level) || a == b) return;
+        final f = (level - a) / (b - a);
+        pts.add(Offset.lerp(from, to, f)!);
+      }
+
+      final c0 = c.toDouble(), r0 = r.toDouble();
+      edge(tl, tr, Offset(c0, r0), Offset(c0 + 1, r0));
+      edge(tr, br, Offset(c0 + 1, r0), Offset(c0 + 1, r0 + 1));
+      edge(bl, br, Offset(c0, r0 + 1), Offset(c0 + 1, r0 + 1));
+      edge(tl, bl, Offset(c0, r0), Offset(c0, r0 + 1));
+      if (pts.length == 2) {
+        segments.add((pts[0], pts[1]));
+      } else if (pts.length == 4) {
+        // Saddle: pair crossings so the cell's centre value decides which
+        // corners are connected.
+        final centreAbove = (tl + tr + br + bl) / 4 >= level;
+        final tlAbove = tl >= level;
+        if (centreAbove == tlAbove) {
+          segments.add((pts[0], pts[1]));
+          segments.add((pts[2], pts[3]));
+        } else {
+          segments.add((pts[0], pts[3]));
+          segments.add((pts[1], pts[2]));
+        }
+      }
+    }
+  }
+  return segments;
 }
