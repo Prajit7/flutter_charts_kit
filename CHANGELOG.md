@@ -16,6 +16,8 @@
 - When a `LineChart2D`'s or `BarChart2D`'s data changes, it now morphs to the new values and
   keeps zoom instead of replaying the entrance animation (set
   `updateAnimation: ChartUpdateAnimation.replay` for the old behavior).
+- `ChartPoint`, `XySeries`, `CategorySeries` and `PieSlice` now compare by value (`==`), not
+  identity.
 - Default tick/tooltip number format now shows up to 2 decimals with trailing zeros trimmed
   (was 1 decimal).
 
@@ -37,9 +39,9 @@
   `MacdIndicator` in their own panes), evenly spaced candles (no weekend/overnight gaps),
   right-hand price axis, OHLC header legend with an eye button per indicator to hide/show it
   (`showIndicatorToggles`, `onIndicatorVisibilityChanged`), trading-app navigation (drag to
-  scroll through history with momentum, pinch or wheel to zoom, long-press crosshair on touch,
-  follows live data at the user's zoom while the newest candle is in view), `visibleCandles` to follow
-  live data, and the dark `ChartTheme.trading` look by default.
+  scroll through history with momentum, pinch or wheel to zoom, long-press crosshair on touch),
+  `visibleCandles` to follow live data (at the user's zoom while the newest candle is in view),
+  and the dark `ChartTheme.trading` look by default.
 - `LiveCandles`: aggregates live trades into interval candles and tracks the last price.
 - `ChartThemeScope.maybeOf` and `ChartTheme.trading`.
 - New chart types: `HeatmapChart2D`, `RadarChart2D`, `GaugeChart` (arc or needle, animated), `Histogram2D`,
