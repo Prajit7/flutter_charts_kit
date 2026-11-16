@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'keyboard_nav.dart';
 import 'svg_export.dart';
 import 'models.dart';
 import 'legend.dart';
@@ -209,7 +210,8 @@ double _categoryLabelPad(List<String> categories, ChartTheme theme, double width
   for (final c in categories) {
     final tp = ChartTextPainter(
       text: TextSpan(
-          text: c, style: TextStyle(fontSize: theme.tickFontSize, fontWeight: FontWeight.w600, fontFamily: theme.fontFamily)),
+          text: c,
+          style: TextStyle(fontSize: theme.tickFontSize, fontWeight: FontWeight.w600, fontFamily: theme.fontFamily)),
       textDirection: TextDirection.ltr,
       maxLines: 1,
     )..layout();
@@ -222,8 +224,7 @@ Rect _barPlotArea(Size size, bool horizontal, List<String> categories, ChartThem
     ? Cartesian2DAxes.computePlotArea(size, leftPad: _categoryLabelPad(categories, theme, size.width))
     : Cartesian2DAxes.computePlotArea(size);
 
-class _BarChart2DState extends State<BarChart2D>
-    with TickerProviderStateMixin, ChartControllerMixin<BarChart2D> {
+class _BarChart2DState extends State<BarChart2D> with TickerProviderStateMixin, ChartControllerMixin<BarChart2D> {
   final ValueNotifier<Set<String>> _hiddenNotifier = ValueNotifier(const {});
   final ValueNotifier<_BarInteraction> _interactionNotifier = ValueNotifier(const _BarInteraction());
   late final AnimationController _controller;
@@ -257,7 +258,8 @@ class _BarChart2DState extends State<BarChart2D>
   @override
   void didUpdateWidget(covariant BarChart2D oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final categoriesChanged = !listEquals(oldWidget.categories, widget.categories) || oldWidget.horizontal != widget.horizontal;
+    final categoriesChanged =
+        !listEquals(oldWidget.categories, widget.categories) || oldWidget.horizontal != widget.horizontal;
     if (!categoriesChanged && listEquals(oldWidget.series, widget.series)) return;
     // A different set of categories invalidates any zoom window (it holds
     // category indices), and there's nothing sensible to morph from.
@@ -301,7 +303,8 @@ class _BarChart2DState extends State<BarChart2D>
     return [
       for (final s in series)
         CategorySeries(name: s.name, color: s.color, values: [
-          for (int i = 0; i < s.values.length; i++) i < totals.length && totals[i] != 0 ? s.values[i] / totals[i] * 100 : 0,
+          for (int i = 0; i < s.values.length; i++)
+            i < totals.length && totals[i] != 0 ? s.values[i] / totals[i] * 100 : 0,
         ]),
     ];
   }
@@ -340,7 +343,8 @@ class _BarChart2DState extends State<BarChart2D>
         CategorySeries(name: s.name, color: s.color, values: [
           for (int i = 0; i < s.values.length; i++)
             // New series/categories grow from zero.
-            lerp(byName[s.name] != null && i < byName[s.name]!.values.length ? byName[s.name]!.values[i] : 0, s.values[i]),
+            lerp(byName[s.name] != null && i < byName[s.name]!.values.length ? byName[s.name]!.values[i] : 0,
+                s.values[i]),
         ]),
     ];
     final a = _geometryFor(size, from, theme, zoom), b = _geometryFor(size, visible, theme, zoom);
@@ -373,7 +377,10 @@ class _BarChart2DState extends State<BarChart2D>
     final zoomEnabled = widget.zoomMode != ChartZoomMode.none && !widget.horizontal;
     return ChartFrame(
       boundaryKey: chartBoundaryKey,
-      semanticLabel: describeChart(widget.horizontal ? 'Horizontal bar chart' : 'Bar chart', widget.title, ['${widget.categories.length} categories', for (final s in widget.series) summarizeValues(s.name, s.values, widget.yTickFormatter)]),
+      semanticLabel: describeChart(widget.horizontal ? 'Horizontal bar chart' : 'Bar chart', widget.title, [
+        '${widget.categories.length} categories',
+        for (final s in widget.series) summarizeValues(s.name, s.values, widget.yTickFormatter)
+      ]),
       title: widget.title,
       subtitle: widget.subtitle,
       legendPosition: widget.legendPosition,
@@ -383,85 +390,96 @@ class _BarChart2DState extends State<BarChart2D>
         builder: (context, hidden, _) {
           final visibleSeries = widget.series.where((s) => !hidden.contains(s.name)).toList();
           _lastVisible = visibleSeries;
-          return LayoutBuilder(
-            builder: (context, constraints) {
-              final size = constraints.biggest;
-              return GestureDetector(
-                onTapUp: (d) => _handleTap(d.localPosition, size, visibleSeries, theme),
-                onPanStart: zoomEnabled
-                    ? (d) => _dragZoom.start(d.localPosition, _barPlotArea(size, false, widget.categories, theme))
-                    : null,
-                onPanUpdate: zoomEnabled ? (d) => _handlePanUpdate(d.localPosition, size, theme) : null,
-                onPanEnd: zoomEnabled ? (_) => _handlePanEnd(size, visibleSeries, theme) : null,
-                child: MouseRegion(
-                  onHover: (e) => _applyHover(_hitTest(e.localPosition, size, visibleSeries, theme)),
-                  onExit: (_) {
-                    _interactionNotifier.value = _interactionNotifier.value.copyWith(clearHover: true);
-                    widget.onBarHover?.call(null, null, null);
-                    widget.crosshairSync?.clear(this);
-                  },
-                  child: ValueListenableBuilder<_BarInteraction>(
-                    valueListenable: _interactionNotifier,
-                    builder: (context, interaction, __) {
-                      return Stack(
-                        children: [
-                          AnimatedBuilder(
-                            animation: Listenable.merge([_controller, _morph]),
-                            builder: (context, _) => CustomPaint(
-                              size: size,
-                              painter: _BarChartPainter(
-                                geometry: _morphingGeometry(size, visibleSeries, theme, interaction.zoom),
-                                theme: theme,
-                                xAxisTitle: widget.xAxisTitle,
-                                yAxisTitle: widget.yAxisTitle,
-                                yTickFormatter: _percent ? (v) => '${Cartesian2DAxes.formatNumber(v)}%' : widget.yTickFormatter,
-                                valueLabelFormatter: !widget.showValueLabels
-                                    ? null
-                                    : _percent
-                                        ? (v) => '${v.round()}%'
-                                        : (widget.valueLabelFormatter ?? widget.yTickFormatter),
-                                showGrid: widget.showGrid,
-                                referenceLines: widget.referenceLines,
-                                referenceBands: widget.referenceBands,
-                                annotations: widget.annotations,
-                                hover: interaction.hover,
-                                barStyle: widget.barStyle,
-                                progress: _controller.value,
+          return ChartKeyboardPlot(
+              itemsKey: Object.hashAll([widget.categories.length, ...visibleSeries.map((s) => s.name)]),
+              hitTest: (p, size) {
+                final h = _hitTest(p, size, visibleSeries, theme);
+                return h == null ? null : (h.$1, h.$2);
+              },
+              onNavigate: (p, size) => _applyHover(p == null ? null : _hitTest(p, size, visibleSeries, theme)),
+              onActivate: (p, size) => _handleTap(p, size, visibleSeries, theme),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final size = constraints.biggest;
+                  return GestureDetector(
+                    onTapUp: (d) => _handleTap(d.localPosition, size, visibleSeries, theme),
+                    onPanStart: zoomEnabled
+                        ? (d) => _dragZoom.start(d.localPosition, _barPlotArea(size, false, widget.categories, theme))
+                        : null,
+                    onPanUpdate: zoomEnabled ? (d) => _handlePanUpdate(d.localPosition, size, theme) : null,
+                    onPanEnd: zoomEnabled ? (_) => _handlePanEnd(size, visibleSeries, theme) : null,
+                    child: MouseRegion(
+                      onHover: (e) => _applyHover(_hitTest(e.localPosition, size, visibleSeries, theme)),
+                      onExit: (_) {
+                        _interactionNotifier.value = _interactionNotifier.value.copyWith(clearHover: true);
+                        widget.onBarHover?.call(null, null, null);
+                        widget.crosshairSync?.clear(this);
+                      },
+                      child: ValueListenableBuilder<_BarInteraction>(
+                        valueListenable: _interactionNotifier,
+                        builder: (context, interaction, __) {
+                          return Stack(
+                            children: [
+                              AnimatedBuilder(
+                                animation: Listenable.merge([_controller, _morph]),
+                                builder: (context, _) => CustomPaint(
+                                  size: size,
+                                  painter: _BarChartPainter(
+                                    geometry: _morphingGeometry(size, visibleSeries, theme, interaction.zoom),
+                                    theme: theme,
+                                    xAxisTitle: widget.xAxisTitle,
+                                    yAxisTitle: widget.yAxisTitle,
+                                    yTickFormatter:
+                                        _percent ? (v) => '${Cartesian2DAxes.formatNumber(v)}%' : widget.yTickFormatter,
+                                    valueLabelFormatter: !widget.showValueLabels
+                                        ? null
+                                        : _percent
+                                            ? (v) => '${v.round()}%'
+                                            : (widget.valueLabelFormatter ?? widget.yTickFormatter),
+                                    showGrid: widget.showGrid,
+                                    referenceLines: widget.referenceLines,
+                                    referenceBands: widget.referenceBands,
+                                    annotations: widget.annotations,
+                                    hover: interaction.hover,
+                                    barStyle: widget.barStyle,
+                                    progress: _controller.value,
+                                  ),
+                                ),
                               ),
-                            ),
-                          ),
-                          if (interaction.dragRectScreen != null)
-                            ChartSelectionOverlay(rect: interaction.dragRectScreen!, theme: theme),
-                          if (interaction.zoom != null)
-                            Positioned(right: 8, top: 8, child: ChartResetZoomButton(theme: theme, onTap: resetZoom)),
-                          if (interaction.hover != null) _buildTooltip(interaction.hover!, size, theme),
-                          if (widget.crosshairSync != null && interaction.hover == null)
-                            IgnorePointer(
-                              child: ListenableBuilder(
-                                listenable: widget.crosshairSync!,
-                                builder: (context, _) {
-                                  final x = widget.crosshairSync!.xFor(this);
-                                  final g = _geometryFor(size, visibleSeries, theme, interaction.zoom);
-                                  final slot = x == null ? -1 : g.visibleIndices.indexOf(x.round());
-                                  if (slot < 0) return const SizedBox.shrink();
-                                  final c = g.slotCenters[slot];
-                                  final p = g.plotArea;
-                                  final w = (g.horizontal ? p.height : p.width) / g.visibleIndices.length;
-                                  final band = g.horizontal
-                                      ? Rect.fromLTRB(p.left, c - w / 2, p.right, c + w / 2)
-                                      : Rect.fromLTRB(c - w / 2, p.top, c + w / 2, p.bottom);
-                                  return CustomPaint(size: size, painter: SyncBandPainter(slot: band, theme: theme));
-                                },
-                              ),
-                            ),
-                        ],
-                      );
-                    },
-                  ),
-                ),
-              );
-            },
-          );
+                              if (interaction.dragRectScreen != null)
+                                ChartSelectionOverlay(rect: interaction.dragRectScreen!, theme: theme),
+                              if (interaction.zoom != null)
+                                Positioned(
+                                    right: 8, top: 8, child: ChartResetZoomButton(theme: theme, onTap: resetZoom)),
+                              if (interaction.hover != null) _buildTooltip(interaction.hover!, size, theme),
+                              if (widget.crosshairSync != null && interaction.hover == null)
+                                IgnorePointer(
+                                  child: ListenableBuilder(
+                                    listenable: widget.crosshairSync!,
+                                    builder: (context, _) {
+                                      final x = widget.crosshairSync!.xFor(this);
+                                      final g = _geometryFor(size, visibleSeries, theme, interaction.zoom);
+                                      final slot = x == null ? -1 : g.visibleIndices.indexOf(x.round());
+                                      if (slot < 0) return const SizedBox.shrink();
+                                      final c = g.slotCenters[slot];
+                                      final p = g.plotArea;
+                                      final w = (g.horizontal ? p.height : p.width) / g.visibleIndices.length;
+                                      final band = g.horizontal
+                                          ? Rect.fromLTRB(p.left, c - w / 2, p.right, c + w / 2)
+                                          : Rect.fromLTRB(c - w / 2, p.top, c + w / 2, p.bottom);
+                                      return CustomPaint(
+                                          size: size, painter: SyncBandPainter(slot: band, theme: theme));
+                                    },
+                                  ),
+                                ),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+                  );
+                },
+              ));
         },
       ),
     );
@@ -558,7 +576,8 @@ class _BarChart2DState extends State<BarChart2D>
     final sync = widget.crosshairSync;
     if (sync != null) hit == null ? sync.clear(this) : sync.update(this, hit.$1.toDouble());
     if (changed) {
-      widget.onBarHover?.call(hit?.$2, hit == null ? null : widget.categories[hit.$1], hit == null ? null : _original(hit.$2, hit.$1));
+      widget.onBarHover?.call(
+          hit?.$2, hit == null ? null : widget.categories[hit.$1], hit == null ? null : _original(hit.$2, hit.$1));
     }
   }
 
@@ -581,7 +600,9 @@ class _BarChart2DState extends State<BarChart2D>
               width: 150,
               title: seriesName,
               subtitle: widget.categories[catIndex],
-              value: _percent ? '${widget.yTickFormatter(value)} (${shown.toStringAsFixed(1)}%)' : widget.yTickFormatter(value),
+              value: _percent
+                  ? '${widget.yTickFormatter(value)} (${shown.toStringAsFixed(1)}%)'
+                  : widget.yTickFormatter(value),
             ),
     );
   }
@@ -797,7 +818,8 @@ class _BarChartPainter extends CustomPainter {
     final List<ChartReferenceBand> bands;
     if (geometry.horizontal) {
       // Values run along x here, so value-axis references become x ones.
-      axes = Cartesian2DAxes(plotArea: plotArea, minX: geometry.minY, maxX: geometry.maxY, minY: 0, maxY: 1, theme: theme);
+      axes =
+          Cartesian2DAxes(plotArea: plotArea, minX: geometry.minY, maxX: geometry.maxY, minY: 0, maxY: 1, theme: theme);
       _drawHorizontalAxes(canvas, axes, valueTicks, names);
       lines = [
         for (final l in referenceLines.where((l) => l.axis == ChartReferenceAxis.y))
@@ -808,7 +830,8 @@ class _BarChartPainter extends CustomPainter {
           ChartReferenceBand.x(b.from, b.to, label: b.label, color: b.color),
       ];
     } else {
-      axes = Cartesian2DAxes(plotArea: plotArea, minX: 0, maxX: 1, minY: geometry.minY, maxY: geometry.maxY, theme: theme);
+      axes =
+          Cartesian2DAxes(plotArea: plotArea, minX: 0, maxX: 1, minY: geometry.minY, maxY: geometry.maxY, theme: theme);
       axes.drawGridAndAxes(
         canvas,
         yTicks: valueTicks,
@@ -842,9 +865,12 @@ class _BarChartPainter extends CustomPainter {
             : (value >= 0
                 ? (Offset(rect.center.dx, rect.bottom), Offset(rect.center.dx, rect.top))
                 : (Offset(rect.center.dx, rect.top), Offset(rect.center.dx, rect.bottom)));
-        canvas.drawLine(base, tip, Paint()
-          ..color = paint.color
-          ..strokeWidth = 2);
+        canvas.drawLine(
+            base,
+            tip,
+            Paint()
+              ..color = paint.color
+              ..strokeWidth = 2);
         final dot = math.min(7.0, math.max(3.5, (geometry.horizontal ? rect.height : rect.width) * 0.35));
         canvas.drawCircle(tip, isHovered ? dot + 1.5 : dot, paint);
         continue;
@@ -864,7 +890,9 @@ class _BarChartPainter extends CustomPainter {
     paintAnnotations(canvas, annotations, (a) {
       final slot = geometry.visibleIndices.indexOf(a.x.round());
       if (slot < 0) return null;
-      return geometry.horizontal ? Offset(axes.toScreenX(a.y), centers[slot]) : Offset(centers[slot], axes.toScreenY(a.y));
+      return geometry.horizontal
+          ? Offset(axes.toScreenX(a.y), centers[slot])
+          : Offset(centers[slot], axes.toScreenY(a.y));
     }, plotArea, theme);
   }
 

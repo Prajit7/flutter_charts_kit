@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'keyboard_nav.dart';
 
 /// The interactive surface shared by charts without drag-to-zoom (heatmap,
 /// radar, funnel, treemap, sankey, …): it measures itself, hit-tests mouse
@@ -27,6 +28,9 @@ class HoverPlot<H> extends StatefulWidget {
   /// The animation replays when this changes (by `==`), e.g. the data.
   final Object? animationKey;
 
+  /// Arrow-key navigation between items (see [ChartKeyboardNavigator]).
+  final bool keyboardNavigation;
+
   const HoverPlot({
     super.key,
     required this.hitTest,
@@ -37,6 +41,7 @@ class HoverPlot<H> extends StatefulWidget {
     this.enableAnimation = true,
     this.animationDuration = const Duration(milliseconds: 600),
     this.animationKey,
+    this.keyboardNavigation = true,
   });
 
   @override
@@ -86,7 +91,7 @@ class _HoverPlotState<H> extends State<HoverPlot<H>> with SingleTickerProviderSt
   Widget build(BuildContext context) {
     return LayoutBuilder(builder: (context, constraints) {
       final size = constraints.biggest;
-      return MouseRegion(
+      final plot = MouseRegion(
         onHover: (e) => _update(e.localPosition, size),
         onExit: (_) {
           if (_hover.value != null) widget.onHover?.call(null);
@@ -114,6 +119,25 @@ class _HoverPlotState<H> extends State<HoverPlot<H>> with SingleTickerProviderSt
             },
           ),
         ),
+      );
+      if (!widget.keyboardNavigation) return plot;
+      return ChartKeyboardNavigator(
+        size: size,
+        itemsKey: widget.animationKey,
+        hitTest: (p) => widget.hitTest(p, size),
+        onNavigate: (p) {
+          if (p == null) {
+            if (_hover.value != null) widget.onHover?.call(null);
+            _hover.value = null;
+          } else {
+            _update(p, size);
+          }
+        },
+        onActivate: (p) {
+          final hit = widget.hitTest(p, size);
+          if (hit != null) widget.onTap?.call(hit);
+        },
+        child: plot,
       );
     });
   }

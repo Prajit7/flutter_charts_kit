@@ -83,6 +83,27 @@ void main() {
         final error = tester.takeException();
         if (error != null) fail('options & trading, scroll step $i: $error');
       }
+
+      // "Stories" tab.
+      await tester.tap(find.byIcon(Icons.auto_graph));
+      await _settle(tester);
+      for (int i = 0; i < 12; i++) {
+        await tester.drag(find.byType(ListView).last, const Offset(0, -300));
+        await _settle(tester);
+        final error = tester.takeException();
+        if (error != null) fail('stories, scroll step $i: $error');
+      }
+
+      // Every demo card in the newer tabs shows its code.
+      final code = find.text('Code').hitTestable();
+      if (code.evaluate().isNotEmpty) {
+        await tester.tap(code.first);
+        await _settle(tester);
+        expect(find.text('Copy'), findsOneWidget);
+        expect(find.byType(SelectableText), findsOneWidget);
+        await tester.tap(find.byIcon(Icons.close));
+        await _settle(tester);
+      }
     });
   }
 }

@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.3.0
+
+### Added
+- Indicators: `SupertrendIndicator`, `AtrIndicator`, `StochasticIndicator`, `AdxIndicator`,
+  `IchimokuIndicator` and `PivotPointsIndicator`, with their maths exported.
+- Price alerts on candlestick drawings (`ChartDrawing.alert`, `onAlert`), plus the parallel
+  channel, measure and text-note tools and magnet snapping.
+- `CandlestickChart2D.compare`: other symbols as rebased lines with % change.
+- `OptionGreeksChart2D` and `OptionMath.positionGreeks`; `OpenInterestTrendChart2D` for OI/PCR
+  through the session.
+- `BumpChart2D`, `SlopeChart2D`, `MarimekkoChart2D`, `StreamgraphChart2D`, `BeeswarmChart2D`,
+  `RidgelineChart2D`, `TreeChart2D` (collapsible org charts) and `TimelineChart2D`.
+- Keyboard navigation (arrow keys, Home/End, Enter, Escape) with screen-reader announcements on
+  line, bar, scatter, pie and all hover-based charts; `ChartKeyboardNavigator` for your own.
+- `ChartDataTable` and `ChartWithTable` (chart ⇄ data-table toggle).
+- `ChartLocale`: locale-aware number, compact, currency, percent and date formatters (Indian,
+  English, German, French presets) without `intl`.
+- `LineChart2D.includeZero` to fit the y-axis to the data.
+
+### Improved
+- Pie and radar charts glide between datasets instead of replaying their entrance.
+- The sunburst's zoom-out hint uses "‹", which every font has, instead of "←".
+
 ## 0.2.0
 
 ### Added
@@ -46,7 +69,6 @@
 - Drawing tools on `CandlestickChart2D` via `ChartDrawingController`: trend line, ray,
   horizontal level, Fibonacci retracement and rectangle; select, move, reshape, delete, and
   save/restore as JSON.
-
 ### Improved
 - Y-axis tick labels shrink to fit instead of overflowing the left margin (e.g. "10000").
 

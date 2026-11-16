@@ -4,6 +4,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_charts_kit/flutter_charts_kit.dart';
 
+import 'code_card.dart';
+
 /// Sixth tab of the demo: option payoff, open interest, market depth,
 /// volatility smile, and the candlestick chart's candle types, volume
 /// profile and drawing tools.
@@ -14,18 +16,18 @@ class OptionsChartsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
     final padding = width < 600 ? 8.0 : (width < 1024 ? 16.0 : 24.0);
-    Widget card(Widget child, {double height = 380}) => Padding(
-          padding: const EdgeInsets.only(bottom: 24),
-          child: SizedBox(height: height, child: child),
-        );
+    Widget card(Widget child, String code, {double height = 380}) => CodeCard(code: snippets[code]!, height: height, child: child);
     return ListView(
       padding: EdgeInsets.symmetric(horizontal: padding, vertical: 16),
       children: [
-        card(const PayoffDemo(), height: 420),
-        card(oiDemo()),
-        card(const LiveDepthDemo()),
-        card(smileDemo()),
-        card(const TradingToolsDemo(), height: 520),
+        card(const PayoffDemo(), 'payoff', height: 420),
+        card(oiDemo(), 'oi'),
+        card(const LiveDepthDemo(), 'depth'),
+        card(smileDemo(), 'smile'),
+        card(greeksDemo(), 'greeks', height: 440),
+        card(oiTrendDemo(), 'oiTrend', height: 420),
+        // The toolbars wrap onto several rows on phones.
+        card(const TradingToolsDemo(), 'trading', height: width < 600 ? 980 : 640),
       ],
     );
   }
@@ -264,20 +266,49 @@ List<Candle> sampleCandles({int count = 140, int seed = 21, double start = 23200
   return out;
 }
 
-/// Candle types, volume profile and drawing tools on one candlestick chart.
+/// Candle types, indicators, volume profile, comparison, drawing tools and
+/// price alerts on one candlestick chart, with simulated live ticks.
 class TradingToolsDemo extends StatefulWidget {
   final bool animate;
+  final bool live;
   final CandleType initialType;
-  const TradingToolsDemo({super.key, this.animate = true, this.initialType = CandleType.heikinAshi});
+  final Set<String> initialIndicators;
+  final bool initialCompare;
+  const TradingToolsDemo({
+    super.key,
+    this.animate = true,
+    this.live = true,
+    this.initialType = CandleType.heikinAshi,
+    this.initialIndicators = const {'Supertrend'},
+    this.initialCompare = false,
+  });
 
   @override
   State<TradingToolsDemo> createState() => _TradingToolsDemoState();
 }
 
 class _TradingToolsDemoState extends State<TradingToolsDemo> {
-  final _candles = sampleCandles();
+  late List<Candle> _candles = sampleCandles();
+  final _bank = sampleCandles(seed: 8, start: 51200);
+  final _rnd = math.Random(4);
+  Timer? _timer;
   late CandleType _type = widget.initialType;
   bool _profile = true;
+  late bool _compare = widget.initialCompare;
+  late final Set<String> _indicators = {...widget.initialIndicators};
+  String? _lastAlert;
+
+  static const _available = <String, CandleIndicator>{
+    'Supertrend': SupertrendIndicator(),
+    'Ichimoku': IchimokuIndicator(),
+    'Pivots': PivotPointsIndicator(period: PivotPeriod.week),
+    'Bollinger': BollingerBandsIndicator(),
+    'Stochastic': StochasticIndicator(),
+    'ADX': AdxIndicator(),
+    'ATR': AtrIndicator(),
+    'RSI': RsiIndicator(),
+  };
+
   late final ChartDrawingController _drawings = () {
     final c = _candles;
     DrawingPoint at(int i, double price) => DrawingPoint(c[i].time, price);
@@ -301,15 +332,79 @@ class _TradingToolsDemoState extends State<TradingToolsDemo> {
         id: 'level',
         tool: DrawingTool.horizontalLine,
         color: const Color(0xFFFF9800),
-        points: [at(0, ((hi + 150) / 50).round() * 50)],
+        alert: true,
+        points: [at(0, (c.last.close / 50).round() * 50 + 50)],
+      ),
+      ChartDrawing(
+        id: 'note',
+        tool: DrawingTool.text,
+        color: const Color(0xFF8E24AA),
+        text: 'Breakout',
+        points: [at(86, c[86].high + 30)],
       ),
     ]);
   }();
 
   @override
+  void initState() {
+    super.initState();
+    if (widget.live) {
+      // Ticks move the last candle; a new candle every 15 ticks.
+      var ticks = 0;
+      _timer = Timer.periodic(const Duration(milliseconds: 400), (_) {
+        final last = _candles.last;
+        final price = last.close + (_rnd.nextDouble() - 0.48) * 28;
+        setState(() {
+          if (++ticks % 15 == 0) {
+            final next = last.time.add(Duration(days: last.time.weekday == 5 ? 3 : 1));
+            _candles = [..._candles.skip(1), Candle(time: next, open: last.close, high: price.clamp(last.close, double.infinity), low: price.clamp(0, last.close), close: price, volume: 1.5e6)];
+          } else {
+            _candles = [
+              ..._candles.take(_candles.length - 1),
+              Candle(
+                time: last.time,
+                open: last.open,
+                high: math.max(last.high, price),
+                low: math.min(last.low, price),
+                close: price,
+                volume: (last.volume ?? 0) + 4e4,
+              ),
+            ];
+          }
+        });
+      });
+    }
+  }
+
+  @override
   void dispose() {
+    _timer?.cancel();
     _drawings.dispose();
     super.dispose();
+  }
+
+  void _onAlert(DrawingAlert a) {
+    final text = 'Alert: price ${a.crossedUp ? 'crossed above' : 'fell below'} ${_inr(a.level)}';
+    setState(() => _lastAlert = text);
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text(text), duration: const Duration(seconds: 2)));
+  }
+
+  Future<void> _addNote() async {
+    final controller = TextEditingController(text: _drawings.noteText);
+    final text = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Note text'),
+        content: TextField(controller: controller, autofocus: true, onSubmitted: (v) => Navigator.pop(context, v)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, controller.text), child: const Text('Place')),
+        ],
+      ),
+    );
+    if (text == null || text.trim().isEmpty) return;
+    _drawings.noteText = text.trim();
+    _drawings.startDrawing(DrawingTool.text);
   }
 
   @override
@@ -318,58 +413,130 @@ class _TradingToolsDemoState extends State<TradingToolsDemo> {
       (DrawingTool.trendLine, Icons.show_chart, 'Trend line'),
       (DrawingTool.ray, Icons.north_east, 'Ray'),
       (DrawingTool.horizontalLine, Icons.horizontal_rule, 'Horizontal level'),
+      (DrawingTool.parallelChannel, Icons.view_stream_outlined, 'Parallel channel'),
       (DrawingTool.fibonacci, Icons.stacked_line_chart, 'Fibonacci retracement'),
       (DrawingTool.rectangle, Icons.crop_square, 'Rectangle'),
+      (DrawingTool.measure, Icons.straighten, 'Measure'),
     ];
-    return Column(children: [
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Wrap(spacing: 6, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
+        SegmentedButton<CandleType>(
+          showSelectedIcon: false,
+          segments: const [
+            ButtonSegment(value: CandleType.standard, label: Text('Candles')),
+            ButtonSegment(value: CandleType.heikinAshi, label: Text('Heikin-Ashi')),
+            ButtonSegment(value: CandleType.renko, label: Text('Renko')),
+            ButtonSegment(value: CandleType.lineBreak, label: Text('Line break')),
+          ],
+          selected: {_type},
+          onSelectionChanged: (s) => setState(() => _type = s.first),
+        ),
+        FilterChip(label: const Text('Volume profile'), selected: _profile, onSelected: (v) => setState(() => _profile = v)),
+        FilterChip(label: const Text('Compare BANKNIFTY'), selected: _compare, onSelected: (v) => setState(() => _compare = v)),
+      ]),
+      const SizedBox(height: 6),
+      Wrap(spacing: 6, runSpacing: 4, children: [
+        for (final name in _available.keys)
+          FilterChip(
+            label: Text(name),
+            selected: _indicators.contains(name),
+            onSelected: (v) => setState(() => v ? _indicators.add(name) : _indicators.remove(name)),
+          ),
+      ]),
+      const SizedBox(height: 6),
       ListenableBuilder(
         listenable: _drawings,
-        builder: (context, _) => Wrap(spacing: 6, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
-          SegmentedButton<CandleType>(
-            showSelectedIcon: false,
-            segments: const [
-              ButtonSegment(value: CandleType.standard, label: Text('Candles')),
-              ButtonSegment(value: CandleType.heikinAshi, label: Text('Heikin-Ashi')),
-              ButtonSegment(value: CandleType.renko, label: Text('Renko')),
-              ButtonSegment(value: CandleType.lineBreak, label: Text('Line break')),
-            ],
-            selected: {_type},
-            onSelectionChanged: (s) => setState(() => _type = s.first),
-          ),
-          FilterChip(
-            label: const Text('Volume profile'),
-            selected: _profile,
-            onSelected: (v) => setState(() => _profile = v),
-          ),
-          for (final (tool, icon, tip) in tools)
+        builder: (context, _) {
+          final selected = _drawings.selected;
+          return Wrap(spacing: 4, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
+            for (final (tool, icon, tip) in tools)
+              IconButton.outlined(
+                tooltip: tip,
+                isSelected: _drawings.activeTool == tool,
+                icon: Icon(icon, size: 18),
+                onPressed: () => _drawings.activeTool == tool ? _drawings.cancelDrawing() : _drawings.startDrawing(tool),
+              ),
             IconButton.outlined(
-              tooltip: tip,
-              isSelected: _drawings.activeTool == tool,
-              icon: Icon(icon, size: 18),
-              onPressed: () => _drawings.activeTool == tool ? _drawings.cancelDrawing() : _drawings.startDrawing(tool),
+              tooltip: 'Text note',
+              isSelected: _drawings.activeTool == DrawingTool.text,
+              icon: const Icon(Icons.sticky_note_2_outlined, size: 18),
+              onPressed: _addNote,
             ),
-          IconButton(
-            tooltip: 'Delete selected (Del)',
-            icon: const Icon(Icons.delete_outline, size: 20),
-            onPressed: _drawings.selectedId == null ? null : _drawings.removeSelected,
-          ),
-          TextButton(onPressed: _drawings.drawings.isEmpty ? null : _drawings.clear, child: const Text('Clear')),
-        ]),
+            IconButton(
+              tooltip: 'Magnet: snap to open/high/low/close',
+              isSelected: _drawings.magnet,
+              icon: Icon(_drawings.magnet ? Icons.attractions : Icons.attractions_outlined, size: 20),
+              onPressed: () => setState(() => _drawings.magnet = !_drawings.magnet),
+            ),
+            IconButton(
+              tooltip: 'Price alert on selected line',
+              isSelected: selected?.alert ?? false,
+              icon: Icon(selected?.alert ?? false ? Icons.notifications_active : Icons.notifications_none, size: 20),
+              onPressed: selected == null || !selected.tool.supportsAlerts
+                  ? null
+                  : () => _drawings.setAlert(selected.id, !selected.alert),
+            ),
+            IconButton(
+              tooltip: 'Delete selected (Del)',
+              icon: const Icon(Icons.delete_outline, size: 20),
+              onPressed: selected == null ? null : _drawings.removeSelected,
+            ),
+            TextButton(onPressed: _drawings.drawings.isEmpty ? null : _drawings.clear, child: const Text('Clear')),
+            if (_lastAlert != null) Text(_lastAlert!, style: Theme.of(context).textTheme.bodySmall),
+          ]);
+        },
       ),
       const SizedBox(height: 8),
       Expanded(
         child: CandlestickChart2D(
           title: 'NIFTY · 1D',
-          subtitle: 'Pick a tool, then drag (or click twice) on the chart · drag a drawing to move it',
+          subtitle: 'Pick a tool, then drag (or click twice) · the orange level has an alert (bell)',
           candles: _candles,
           candleType: _type,
           showVolume: true,
+          indicators: [for (final name in _available.keys) if (_indicators.contains(name)) _available[name]!],
           volumeProfile: _profile ? const VolumeProfile() : null,
+          compare: _compare ? [CandleComparison(label: 'BANKNIFTY', candles: _bank, color: const Color(0xFFFF6D00))] : const [],
           drawingController: _drawings,
+          onAlert: _onAlert,
           enableAnimation: widget.animate,
+          visibleCandles: 110,
           priceFormatter: (v) => _inr(v),
         ),
       ),
     ]);
   }
 }
+
+/// Greeks of the iron condor from the payoff demo.
+Widget greeksDemo({bool animate = true}) => OptionGreeksChart2D(
+      legs: _PayoffDemoState.strategies['Iron condor']!,
+      spot: _spot,
+      daysToExpiry: 6,
+      volatility: 0.13,
+      enableAnimation: animate,
+      priceFormatter: (v) => _inr(v),
+    );
+
+/// A simulated session of total OI, sampled every 5 minutes.
+List<OpenInterestSnapshot> sampleOiSession() {
+  final rnd = math.Random(17);
+  var call = 1.18e8, put = 1.05e8, spot = 24410.0;
+  final start = DateTime(2026, 11, 16, 9, 15);
+  return [
+    for (int i = 0; i <= 75; i++)
+      () {
+        spot += (rnd.nextDouble() - 0.45) * 14;
+        // Writers add puts as the market rises, calls as it falls.
+        put += (spot - 24410) * 900 + rnd.nextDouble() * 6e5;
+        call += (24480 - spot) * 500 + rnd.nextDouble() * 5e5;
+        return OpenInterestSnapshot(time: start.add(Duration(minutes: 5 * i)), callOI: call, putOI: put, spot: spot);
+      }(),
+  ];
+}
+
+Widget oiTrendDemo({bool animate = true}) => OpenInterestTrendChart2D(
+      title: 'NIFTY OI through the session',
+      snapshots: sampleOiSession(),
+      enableAnimation: animate,
+    );

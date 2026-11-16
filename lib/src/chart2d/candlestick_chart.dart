@@ -45,6 +45,19 @@ class Candle {
   int get hashCode => Object.hash(time, open, high, low, close, volume);
 }
 
+/// Another symbol overlaid on a [CandlestickChart2D] for comparison.
+///
+/// Drawn as a line of its closes, rebased so it starts at the main
+/// symbol's price at the first visible candle — the gap between the lines
+/// is the difference in performance. Candles must be in time order.
+class CandleComparison {
+  final String label;
+  final List<Candle> candles;
+  final Color color;
+
+  const CandleComparison({required this.label, required this.candles, required this.color});
+}
+
 /// How [CandlestickChart2D] draws each period.
 enum CandleStyle {
   /// Filled body between open and close, with high/low wicks.
@@ -189,6 +202,16 @@ class CandlestickChart2D extends StatefulWidget {
   /// [ChartDrawingController].
   final ChartDrawingController? drawingController;
 
+  /// Called when the price crosses a drawing with [ChartDrawing.alert] set
+  /// (horizontal lines anywhere; trend lines within their time span; rays
+  /// from their first point on). Checked on each [lastPrice] / last-close
+  /// change.
+  final ValueChanged<DrawingAlert>? onAlert;
+
+  /// Other symbols to compare against, as rebased lines with their %
+  /// change over the visible range.
+  final List<CandleComparison> compare;
+
   const CandlestickChart2D({
     super.key,
     required this.candles,
@@ -229,6 +252,8 @@ class CandlestickChart2D extends StatefulWidget {
     this.lineBreakCount = 3,
     this.volumeProfile,
     this.drawingController,
+    this.onAlert,
+    this.compare = const [],
   });
 
   static String _price(double v) => v.abs() >= 1000 ? v.toStringAsFixed(0) : v.toStringAsFixed(2);
@@ -287,11 +312,15 @@ class _CandleLayout {
   final double maxVolume;
   final Rect? volumeRect;
 
+  /// Comparison lines: (series, [(candle index, rebased price)], % change
+  /// over the visible range).
+  final List<(CandleComparison, List<(double, double)>, double)> comparisons;
+
   _CandleLayout._(this.candles, this.area, this.lo, this.hi, this.price, this.oscillators, this.overlays, this.maxVolume,
-      this.volumeRect);
+      this.volumeRect, this.comparisons);
 
   factory _CandleLayout(Size size, List<Candle> candles, (double, double) view, List<_Study> studies, bool showVolume,
-      double? lastPrice) {
+      double? lastPrice, [List<CandleComparison> compare = const []]) {
     final (lo, hi) = view;
     final area = Rect.fromLTRB(4, 4, math.max(5, size.width - _axisWidth), math.max(5, size.height - _timeAxisHeight));
     final from = math.max(0, (lo + 0.5).ceil()), to = math.min(candles.length - 1, (hi - 0.5).floor());
@@ -319,6 +348,40 @@ class _CandleLayout {
         }
       }
     }
+    // Comparison lines, rebased to the first visible candle's close.
+    final comparisons = <(CandleComparison, List<(double, double)>, double)>[];
+    if (compare.isNotEmpty && from <= to) {
+      final t0 = candles[from].time.millisecondsSinceEpoch, tEnd = candles[to].time.millisecondsSinceEpoch;
+      final first = candles.first.time.millisecondsSinceEpoch, last = candles.last.time.millisecondsSinceEpoch;
+      for (final cmp in compare) {
+        if (cmp.candles.isEmpty) continue;
+        // Base: the comparison's last close at or before the first visible candle.
+        var base = cmp.candles.first;
+        for (final c in cmp.candles) {
+          if (c.time.millisecondsSinceEpoch > t0) break;
+          base = c;
+        }
+        if (base.close == 0) continue;
+        final k = candles[from].close / base.close;
+        final pts = <(double, double)>[];
+        double? lastVisible;
+        for (final c in cmp.candles) {
+          final ms = c.time.millisecondsSinceEpoch;
+          if (ms < first || ms > last) continue;
+          final i = _indexOfTimeIn(candles, ms.toDouble());
+          if (i < from - 1 || i > to + 1) continue;
+          final v = c.close * k;
+          pts.add((i, v));
+          if (ms >= t0 && ms <= tEnd) {
+            lowest = math.min(lowest, v);
+            highest = math.max(highest, v);
+            lastVisible = c.close;
+          }
+        }
+        comparisons.add((cmp, pts, lastVisible == null ? 0 : (lastVisible / base.close - 1) * 100));
+      }
+    }
+
     // Keep the live price in view while the latest candle is.
     if (lastPrice != null && to == candles.length - 1) {
       lowest = math.min(lowest, lastPrice);
@@ -367,7 +430,7 @@ class _CandleLayout {
     final volumeRect = showVolume && maxVolume > 0
         ? Rect.fromLTRB(priceRect.left, priceRect.bottom - priceRect.height * 0.2, priceRect.right, priceRect.bottom)
         : null;
-    return _CandleLayout._(candles, area, lo, hi, price, oscillators, overlays, maxVolume, volumeRect);
+    return _CandleLayout._(candles, area, lo, hi, price, oscillators, overlays, maxVolume, volumeRect, comparisons);
   }
 
   double get slot => area.width / (hi - lo);
@@ -409,25 +472,10 @@ class _CandleLayout {
     return b == a ? lo.toDouble() : lo + (ms - a) / (b - a);
   }
 
-  /// Time between candles at the start/end of the data, for positions
-  /// beyond either end (drawings can extend into the future).
-  double _edgeStep(bool end) {
-    if (candles.length < 2) return 60000;
-    final n = candles.length;
-    final d = end
-        ? candles[n - 1].time.millisecondsSinceEpoch - candles[n - 2].time.millisecondsSinceEpoch
-        : candles[1].time.millisecondsSinceEpoch - candles[0].time.millisecondsSinceEpoch;
-    return d > 0 ? d.toDouble() : 60000;
-  }
+  double _edgeStep(bool end) => _edgeStepIn(candles, end);
 
   /// [indexOfTime], extrapolated past either end of the data.
-  double indexOfTimeExtended(double ms) {
-    if (candles.isEmpty) return 0;
-    final first = candles.first.time.millisecondsSinceEpoch, last = candles.last.time.millisecondsSinceEpoch;
-    if (ms < first) return (ms - first) / _edgeStep(false);
-    if (ms > last) return candles.length - 1 + (ms - last) / _edgeStep(true);
-    return indexOfTime(ms);
-  }
+  double indexOfTimeExtended(double ms) => _indexOfTimeIn(candles, ms);
 
   /// The time (ms) at a fractional candle index — the inverse of
   /// [indexOfTimeExtended].
@@ -561,6 +609,29 @@ class _CandlestickChart2DState extends State<CandlestickChart2D>
     return candles;
   }
 
+  /// Reports alert drawings the price just crossed (after this frame, so
+  /// the callback may set state).
+  void _checkAlerts(double from, double to) {
+    final c = widget.drawingController, cb = widget.onAlert;
+    if (c == null || cb == null || _candles.isEmpty) return;
+    final now = _candles.last.time;
+    final i = (_candles.length - 1).toDouble();
+    final hits = <DrawingAlert>[];
+    for (final d in c.drawings) {
+      if (!d.alert || !d.tool.supportsAlerts) continue;
+      final level = _lineValueAt(_candles, d, i);
+      if (level == null) continue;
+      final crossed = (from < level && to >= level) || (from > level && to <= level);
+      if (crossed) hits.add(DrawingAlert(drawing: d, level: level, previousPrice: from, price: to, time: now));
+    }
+    if (hits.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      for (final h in hits) {
+        cb(h);
+      }
+    });
+  }
+
   List<Candle> _transformed() => CandleTransforms.apply(_raw, widget.candleType,
       renkoBoxSize: widget.renkoBoxSize, lineBreakCount: widget.lineBreakCount);
 
@@ -629,6 +700,7 @@ class _CandlestickChart2DState extends State<CandlestickChart2D>
     if (oldPrice != null && newPrice != null && newPrice != oldPrice) {
       _tickUp = newPrice > oldPrice;
       _flash.forward(from: 0);
+      _checkAlerts(oldPrice, newPrice);
     }
   }
 
@@ -661,7 +733,7 @@ class _CandlestickChart2DState extends State<CandlestickChart2D>
       for (int k = 0; k < _studies.length; k++)
         _Study(_studies[k].indicator, _studies[k].result, index: k, hidden: hidden.contains(k)),
     ];
-    return _CandleLayout(size, _candles, _view.value ?? _defaultView(), studies, widget.showVolume, _lastPrice);
+    return _CandleLayout(size, _candles, _view.value ?? _defaultView(), studies, widget.showVolume, _lastPrice, widget.compare);
   }
 
   void _toggleStudy(int index) {
@@ -801,8 +873,35 @@ class _CandlestickChart2DState extends State<CandlestickChart2D>
 
   // ---- drawing tools ----
 
-  DrawingPoint _pointAt(_CandleLayout l, Offset pos) =>
-      DrawingPoint(DateTime.fromMillisecondsSinceEpoch(l.timeAtIndex(l.indexAt(pos.dx)).round()), l.price.valueAt(pos.dy));
+  DrawingPoint _pointAt(_CandleLayout l, Offset pos) {
+    // Magnet: snap to the nearest O/H/L/C of the candle under the pointer.
+    if (widget.drawingController?.magnet ?? false) {
+      final i = l.indexAt(pos.dx).round();
+      if (i >= 0 && i < l.candles.length) {
+        final c = l.candles[i];
+        final best = [c.open, c.high, c.low, c.close].reduce((a, b) => (l.price.y(a) - pos.dy).abs() <= (l.price.y(b) - pos.dy).abs() ? a : b);
+        if ((l.price.y(best) - pos.dy).abs() <= 16) return DrawingPoint(c.time, best);
+      }
+    }
+    return DrawingPoint(DateTime.fromMillisecondsSinceEpoch(l.timeAtIndex(l.indexAt(pos.dx)).round()), l.price.valueAt(pos.dy));
+  }
+
+  /// A new drawing for [tool] starting at [p] (its later points start there too).
+  ChartDrawing _newDrawing(ChartDrawingController c, DrawingTool tool, DrawingPoint p) => ChartDrawing(
+        id: c.newId(),
+        tool: tool,
+        points: tool.pointCount == 1 ? [p] : [p, p],
+        color: c.color,
+        text: tool == DrawingTool.text ? c.noteText : null,
+      );
+
+  /// Fills in points the user doesn't place directly: a channel's third
+  /// point starts a little below its base line.
+  ChartDrawing _complete(ChartDrawing d, _CandleLayout l) {
+    if (d.tool != DrawingTool.parallelChannel || d.points.length != 2) return d;
+    final offset = (l.price.maxY - l.price.minY) * 0.08;
+    return d.copyWith(points: [...d.points, DrawingPoint(d.points.first.time, d.points.first.price - offset)]);
+  }
 
   /// The drawing under [pos]: (drawing, handle index) for a handle, or
   /// (drawing, null) for its body.
@@ -832,17 +931,17 @@ class _CandlestickChart2DState extends State<CandlestickChart2D>
     if (tool != null) {
       if (!l.price.rect.contains(pos)) return true;
       final p = _pointAt(l, pos);
-      if (tool == DrawingTool.horizontalLine) {
+      if (tool.pointCount == 1) {
         _draft.value = null;
-        c.finish(ChartDrawing(id: c.newId(), tool: tool, points: [p], color: c.color));
+        c.finish(_newDrawing(c, tool, p));
         return true;
       }
       final draft = _draft.value;
       if (draft == null) {
-        _draft.value = ChartDrawing(id: c.newId(), tool: tool, points: [p, p], color: c.color);
+        _draft.value = _newDrawing(c, tool, p);
       } else {
         _draft.value = null;
-        c.finish(draft.copyWith(points: [draft.points.first, p]));
+        c.finish(_complete(draft.copyWith(points: [draft.points.first, p]), l));
       }
       return true;
     }
@@ -862,14 +961,12 @@ class _CandlestickChart2DState extends State<CandlestickChart2D>
       _fling.stop();
       final pending = _draft.value;
       final p = _pointAt(l, pos);
-      final horizontal = tool == DrawingTool.horizontalLine;
+      final single = tool.pointCount == 1;
       // A drag after a first click finishes that drawing; otherwise it
       // starts a new one from here.
-      final draft = pending != null && !horizontal
-          ? pending
-          : ChartDrawing(id: c.newId(), tool: tool, points: horizontal ? [p] : [p, p], color: c.color);
+      final draft = pending != null && !single ? pending : _newDrawing(c, tool, p);
       _draft.value = draft;
-      _drawDrag = _DrawDrag(draft, horizontal ? 0 : 1, pos, creating: true);
+      _drawDrag = _DrawDrag(draft, single ? 0 : 1, pos, creating: true);
       return true;
     }
     final hit = _drawingAt(l, pos);
@@ -918,7 +1015,7 @@ class _CandlestickChart2DState extends State<CandlestickChart2D>
     final pts = [for (final p in draft.points) _drawingScreenPoint(l, p)];
     if (pts.length > 1 && (pts[0] - pts[1]).distance < 4) return true; // still pending: click the second point
     _draft.value = null;
-    widget.drawingController!.finish(draft);
+    widget.drawingController!.finish(_complete(draft, l));
     return true;
   }
 
@@ -1273,6 +1370,16 @@ class _CandlePainter extends CustomPainter {
       if (!s.hidden) _paintStudy(canvas, s.result, price, from, to);
     }
 
+    for (final (cmp, pts, _) in l.comparisons) {
+      if (pts.length < 2) continue;
+      final path = Path()..addPolygon([for (final (i, v) in pts) Offset(l.x(i), price.y(v))], false);
+      canvas.drawPath(path, Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.6
+        ..strokeJoin = StrokeJoin.round
+        ..color = cmp.color);
+    }
+
     for (int i = from; i <= to; i++) {
       final c = l.candles[i];
       final x = l.x(i);
@@ -1292,6 +1399,29 @@ class _CandlePainter extends CustomPainter {
     }
     canvas.restore();
     references.paintLines(canvas, [for (final r in widget.referenceLines) toIndexLine(r)]);
+
+    // Comparison legend: the main symbol's and each comparison's change
+    // over the visible range, bottom-left of the price pane.
+    if (l.comparisons.isNotEmpty && from <= to) {
+      final mainChange = (l.candles[to].close / l.candles[from].close - 1) * 100;
+      String pct(double v) => '${v >= 0 ? '+' : ''}${v.toStringAsFixed(2)}%';
+      final rows = [
+        (widget.title ?? 'This', pct(mainChange), mainChange >= 0 ? widget.upColor : widget.downColor),
+        for (final (cmp, _, change) in l.comparisons) (cmp.label, pct(change), cmp.color),
+      ];
+      // Top-right: the top-left holds the O/H/L/C and indicator legends.
+      var y = price.rect.top + 6;
+      for (final (label, value, color) in rows) {
+        final tp = layoutChartText('$label  $value', color: color, fontSize: 10.5, fontWeight: FontWeight.w700, fontFamily: theme.fontFamily);
+        final x = price.rect.right - tp.width - 10;
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(Rect.fromLTWH(x - 4, y - 1, tp.width + 8, tp.height + 2), const Radius.circular(3)),
+          Paint()..color = theme.tooltipBackgroundColor.withValues(alpha: 0.8),
+        );
+        tp.paint(canvas, Offset(x, y));
+        y += 15;
+      }
+    }
     paintAnnotations(canvas, widget.annotations, (a) {
       final i = l.indexOfTime(a.x);
       if (i < l.lo || i > l.hi) return null;
@@ -1541,6 +1671,58 @@ class _DrawDrag {
   _DrawDrag(this.original, this.handle, this.start, {required this.creating});
 }
 
+double _edgeStepIn(List<Candle> candles, bool end) {
+  if (candles.length < 2) return 60000;
+  final n = candles.length;
+  final d = end
+      ? candles[n - 1].time.millisecondsSinceEpoch - candles[n - 2].time.millisecondsSinceEpoch
+      : candles[1].time.millisecondsSinceEpoch - candles[0].time.millisecondsSinceEpoch;
+  return d > 0 ? d.toDouble() : 60000;
+}
+
+/// Fractional candle index of a time, extrapolated past either end.
+double _indexOfTimeIn(List<Candle> candles, double ms) {
+  if (candles.isEmpty) return 0;
+  final first = candles.first.time.millisecondsSinceEpoch, last = candles.last.time.millisecondsSinceEpoch;
+  if (ms < first) return (ms - first) / _edgeStepIn(candles, false);
+  if (ms > last) return candles.length - 1 + (ms - last) / _edgeStepIn(candles, true);
+  int lo = 0, hi = candles.length - 1;
+  while (hi - lo > 1) {
+    final mid = (lo + hi) ~/ 2;
+    candles[mid].time.millisecondsSinceEpoch <= ms ? lo = mid : hi = mid;
+  }
+  final a = candles[lo].time.millisecondsSinceEpoch, b = candles[hi].time.millisecondsSinceEpoch;
+  return b == a ? lo.toDouble() : lo + (ms - a) / (b - a);
+}
+
+/// The price of an alertable line at candle index [i], or null where the
+/// line isn't watched (before a ray starts, outside a trend line's span).
+double? _lineValueAt(List<Candle> candles, ChartDrawing d, double i) {
+  if (d.tool == DrawingTool.horizontalLine) return d.points.first.price;
+  if (d.points.length < 2) return null;
+  final i0 = _indexOfTimeIn(candles, d.points[0].time.millisecondsSinceEpoch.toDouble());
+  final i1 = _indexOfTimeIn(candles, d.points[1].time.millisecondsSinceEpoch.toDouble());
+  if ((i1 - i0).abs() < 1e-9) return null;
+  if (d.tool == DrawingTool.trendLine && (i < math.min(i0, i1) || i > math.max(i0, i1))) return null;
+  if (d.tool == DrawingTool.ray && (i - i0) * (i1 - i0) < 0) return null;
+  return d.points[0].price + (d.points[1].price - d.points[0].price) * (i - i0) / (i1 - i0);
+}
+
+/// A channel's second line: the base line shifted vertically so it passes
+/// through the third point.
+(Offset, Offset) _channelOffsetLine(List<Offset> pts) {
+  final a = pts[0], b = pts[1], c = pts[2];
+  final baseY = (b.dx - a.dx).abs() < 1e-9 ? a.dy : a.dy + (b.dy - a.dy) * (c.dx - a.dx) / (b.dx - a.dx);
+  final dy = c.dy - baseY;
+  return (a + Offset(0, dy), b + Offset(0, dy));
+}
+
+/// The text box of a note drawing.
+Rect _noteBox(ChartDrawing d, Offset p, String? fontFamily) {
+  final tp = layoutChartText(d.text ?? 'Note', color: d.color, fontSize: 11, fontFamily: fontFamily, maxWidth: 200);
+  return Rect.fromLTWH(p.dx + 6, p.dy - tp.height - 10, tp.width + 12, tp.height + 8);
+}
+
 Offset _drawingScreenPoint(_CandleLayout l, DrawingPoint p) =>
     Offset(l.x(l.indexOfTimeExtended(p.time.millisecondsSinceEpoch.toDouble())), l.price.y(p.price));
 
@@ -1584,7 +1766,32 @@ bool _nearDrawing(_CandleLayout l, ChartDrawing d, Offset pos) {
       final (x0, x1) = _fibSpan(pts[0], pts[1]);
       if (pos.dx < x0 - 4 || pos.dx > x1 + 4) return false;
       return ChartDrawing.fibonacciLevels.any((lv) => (l.price.y(d.fibonacciPrice(lv)) - pos.dy).abs() <= tolerance);
+    case DrawingTool.parallelChannel:
+      if (pts.length < 3) return false;
+      final (c0, c1) = _channelOffsetLine(pts);
+      return (Path()..addPolygon([pts[0], pts[1], c1, c0], true)).contains(pos) ||
+          _segmentDistance(pos, pts[0], pts[1]) <= tolerance ||
+          _segmentDistance(pos, c0, c1) <= tolerance;
+    case DrawingTool.measure:
+      return pts.length > 1 && Rect.fromPoints(pts[0], pts[1]).inflate(4).contains(pos);
+    case DrawingTool.text:
+      return _noteBox(d, pts[0], null).inflate(2).contains(pos);
   }
+}
+
+/// A small bell marking a drawing with a price alert.
+void _paintBell(Canvas canvas, Offset c, Color color) {
+  final p = Paint()..color = color;
+  final bell = Path()
+    ..moveTo(c.dx - 5, c.dy + 3)
+    ..quadraticBezierTo(c.dx - 4, c.dy + 1, c.dx - 4, c.dy - 1.5)
+    ..quadraticBezierTo(c.dx - 4, c.dy - 6, c.dx, c.dy - 6)
+    ..quadraticBezierTo(c.dx + 4, c.dy - 6, c.dx + 4, c.dy - 1.5)
+    ..quadraticBezierTo(c.dx + 4, c.dy + 1, c.dx + 5, c.dy + 3)
+    ..close();
+  canvas.drawPath(bell, p);
+  canvas.drawCircle(Offset(c.dx, c.dy + 4.6), 1.6, p);
+  canvas.drawCircle(Offset(c.dx, c.dy - 6.6), 1, p);
 }
 
 class _DrawingsPainter extends CustomPainter {
@@ -1663,6 +1870,55 @@ class _DrawingsPainter extends CustomPainter {
           Cartesian2DAxes.dashedLineStatic(canvas, pts[0], pts[1], Paint()
             ..color = d.color.withValues(alpha: d.color.a * 0.7)
             ..strokeWidth = 1);
+        case DrawingTool.parallelChannel:
+          if (pts.length < 3) break;
+          final (c0, c1) = _channelOffsetLine(pts);
+          canvas.drawPath(Path()..addPolygon([pts[0], pts[1], c1, c0], true),
+              Paint()..color = d.color.withValues(alpha: d.color.a * 0.1));
+          canvas.drawLine(pts[0], pts[1], stroke);
+          canvas.drawLine(c0, c1, stroke);
+          Cartesian2DAxes.dashedLineStatic(canvas, (pts[0] + c0) / 2, (pts[1] + c1) / 2, Paint()
+            ..color = d.color.withValues(alpha: d.color.a * 0.6)
+            ..strokeWidth = 1);
+        case DrawingTool.measure:
+          if (pts.length < 2) break;
+          final p0 = d.points[0], p1 = d.points[1];
+          final change = p1.price - p0.price;
+          final good = change >= 0;
+          final color = good ? const Color(0xFF26A69A) : const Color(0xFFEF5350);
+          final r = Rect.fromPoints(pts[0], pts[1]);
+          canvas.drawRect(r, Paint()..color = color.withValues(alpha: 0.15));
+          canvas.drawLine(Offset(r.center.dx, pts[0].dy), Offset(r.center.dx, pts[1].dy), Paint()
+            ..color = color
+            ..strokeWidth = 1.2);
+          final bars = (l.indexOfTimeExtended(p1.time.millisecondsSinceEpoch.toDouble()) -
+                  l.indexOfTimeExtended(p0.time.millisecondsSinceEpoch.toDouble()))
+              .round();
+          final pct = p0.price == 0 ? 0 : change / p0.price * 100;
+          final label = '${good ? '+' : ''}${priceFormatter(change)} (${good ? '+' : ''}${pct.toStringAsFixed(2)}%)\n'
+              '$bars bar${bars.abs() == 1 ? '' : 's'}';
+          final tp = layoutChartText(label, color: Colors.white, fontSize: 10.5, fontFamily: theme.fontFamily, textAlign: TextAlign.center);
+          final box = Rect.fromCenter(
+              center: Offset(r.center.dx, good ? r.top - tp.height / 2 - 8 : r.bottom + tp.height / 2 + 8),
+              width: tp.width + 12,
+              height: tp.height + 6);
+          canvas.drawRRect(RRect.fromRectAndRadius(box, const Radius.circular(4)), Paint()..color = color);
+          tp.paint(canvas, box.topLeft + const Offset(6, 3));
+        case DrawingTool.text:
+          final box = _noteBox(d, pts[0], theme.fontFamily);
+          canvas.drawLine(pts[0], box.bottomLeft + const Offset(4, 0), stroke);
+          canvas.drawRRect(RRect.fromRectAndRadius(box, const Radius.circular(4)), Paint()..color = theme.tooltipBackgroundColor);
+          canvas.drawRRect(RRect.fromRectAndRadius(box, const Radius.circular(4)), Paint()
+            ..color = d.color
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.2);
+          layoutChartText(d.text ?? 'Note', color: d.color, fontSize: 11, fontFamily: theme.fontFamily, maxWidth: 200)
+              .paint(canvas, box.topLeft + const Offset(6, 4));
+          canvas.drawCircle(pts[0], 3, Paint()..color = d.color);
+      }
+      if (d.alert && d.tool.supportsAlerts) {
+        final at = d.tool == DrawingTool.horizontalLine ? Offset(rect.right - 12, pts[0].dy - 10) : pts.last + const Offset(10, -10);
+        _paintBell(canvas, at, d.color);
       }
       if (d.id == selectedId) {
         for (final p in pts) {

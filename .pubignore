@@ -1,0 +1,11 @@
+.dart_tool/
+.packages
+pubspec.lock
+*.iml
+.idea/
+.vscode/
+example/.dart_tool/
+build/
+example/build/
+# README media: served from GitHub, kept out of the published package.
+doc/media/

@@ -45,11 +45,25 @@ export 'src/chart2d/heatmap_chart.dart' show HeatmapChart2D, HeatmapCell;
 export 'src/chart2d/sparkline.dart' show Sparkline, SparklineType;
 export 'src/chart2d/gauge_chart.dart' show GaugeChart, GaugeRange, GaugeStyle;
 export 'src/chart2d/radar_chart.dart' show RadarChart2D, RadarHit;
-export 'src/chart2d/candlestick_chart.dart' show CandlestickChart2D, Candle, CandleStyle;
+export 'src/chart2d/candlestick_chart.dart' show CandlestickChart2D, Candle, CandleStyle, CandleComparison;
 export 'src/chart2d/indicators.dart'
     show
         CandleIndicator,
         MovingAverageIndicator,
+        AtrIndicator,
+        SupertrendIndicator,
+        StochasticIndicator,
+        AdxIndicator,
+        IchimokuIndicator,
+        PivotPointsIndicator,
+        PivotPeriod,
+        atr,
+        trueRange,
+        supertrend,
+        stochastic,
+        adx,
+        ichimoku,
+        pivotPoints,
         MovingAverageType,
         BollingerBandsIndicator,
         VwapIndicator,
@@ -79,6 +93,14 @@ export 'src/chart2d/option_payoff_chart.dart' show OptionPayoffChart2D;
 export 'src/chart2d/open_interest_chart.dart' show OpenInterestChart2D, OptionStrikeData, OpenInterestView;
 export 'src/chart2d/market_depth_chart.dart' show MarketDepthChart2D, DepthLevel, DepthHit;
 export 'src/chart2d/volatility_smile_chart.dart' show VolatilitySmileChart2D, VolatilitySmile;
+export 'src/chart2d/options_analytics.dart' show OptionGreeksChart2D, OptionGreek, OpenInterestTrendChart2D, OpenInterestSnapshot;
+export 'src/chart2d/comparison_charts.dart' show BumpChart2D, BumpHit, SlopeChart2D, SlopeItem, MarimekkoChart2D, MarimekkoHit;
+export 'src/chart2d/flow_distribution_charts.dart'
+    show StreamgraphChart2D, StreamBaseline, BeeswarmChart2D, BeeswarmGroup, BeeswarmHit, RidgelineChart2D, RidgelineGroup;
+export 'src/chart2d/structure_charts.dart' show TreeChart2D, TreeChartNode, TreeOrientation, TimelineChart2D, TimelineEvent;
+export 'src/chart2d/data_table_view.dart' show ChartDataTable, ChartWithTable;
+export 'src/chart2d/chart_formats.dart' show ChartLocale, DigitGrouping;
+export 'src/chart2d/keyboard_nav.dart' show ChartKeyboardNavigator;
 export 'src/chart2d/candle_types.dart' show CandleType, CandleTransforms;
 export 'src/chart2d/volume_profile.dart' show VolumeProfile, VolumeProfileResult, VolumeProfileBin;
-export 'src/chart2d/chart_drawings.dart' show ChartDrawingController, ChartDrawing, DrawingPoint, DrawingTool;
+export 'src/chart2d/chart_drawings.dart' show ChartDrawingController, ChartDrawing, DrawingPoint, DrawingTool, DrawingToolPoints, DrawingAlert;

@@ -320,7 +320,7 @@ class _SunburstPainter extends CustomPainter {
     }
 
     // Centre: the current root's name and total; a back arrow when zoomed.
-    final name = layoutChartText(canZoomOut ? '← $centerLabel' : centerLabel,
+    final name = layoutChartText(canZoomOut ? '‹ $centerLabel' : centerLabel,
         color: theme.subtitleColor, fontSize: 11, fontFamily: theme.fontFamily, maxWidth: innerRadius * 1.7);
     final value = layoutChartText(centerValue,
         color: theme.titleColor, fontSize: math.max(12, innerRadius * 0.3), fontWeight: FontWeight.bold, fontFamily: theme.fontFamily, maxWidth: innerRadius * 1.8);

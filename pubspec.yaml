@@ -1,6 +1,6 @@
 name: flutter_charts_kit
-description: Interactive 2D and 3D charts for Flutter.
-version: 0.2.0
+description: Zero-dependency interactive 2D and 3D Flutter charts for dashboards and fintech apps, with trading candlesticks, indicators, drawing tools, option payoffs, maps and network graphs.
+version: 0.3.0
 homepage: https://github.com/prajit7/flutter_charts_kit
 repository: https://github.com/prajit7/flutter_charts_kit
 issue_tracker: https://github.com/prajit7/flutter_charts_kit/issues
@@ -22,6 +22,10 @@ screenshots:
     path: example/assets/business.png
   - description: Option payoff, open interest, market depth, volatility smile, Heikin-Ashi with volume profile and drawings, Renko.
     path: example/assets/options.png
+  - description: Indicators, symbol comparison, alerts, option Greeks and OI through the session.
+    path: example/assets/trading_tools.png
+  - description: Bump, slope, Marimekko, streamgraph, beeswarm, ridgeline, org chart and timeline.
+    path: example/assets/stories.png
   - description: World choropleth map, network graph, chord diagram and parallel coordinates.
     path: example/assets/graphs_maps.png
   - description: Heatmap, candlestick, radar, histogram, box plot, gauges, funnel, treemap and Sankey.

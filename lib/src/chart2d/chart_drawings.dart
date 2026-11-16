@@ -17,6 +17,28 @@ enum DrawingTool {
 
   /// A shaded box between two corners (a range or zone).
   rectangle,
+
+  /// Two parallel lines: the first two points set the base line, the third
+  /// sets the other line's offset.
+  parallelChannel,
+
+  /// A price/time ruler: change, percentage and bar count between two points.
+  measure,
+
+  /// A text note pinned at one point.
+  text,
+}
+
+/// How many points a [DrawingTool] takes.
+extension DrawingToolPoints on DrawingTool {
+  int get pointCount => switch (this) {
+        DrawingTool.horizontalLine || DrawingTool.text => 1,
+        DrawingTool.parallelChannel => 3,
+        _ => 2,
+      };
+
+  /// Whether the drawing has a price-vs-time line that alerts can watch.
+  bool get supportsAlerts => this == DrawingTool.horizontalLine || this == DrawingTool.trendLine || this == DrawingTool.ray;
 }
 
 /// A point of a drawing: a time (it may fall between candles or beyond
@@ -50,13 +72,33 @@ class ChartDrawing {
   final List<DrawingPoint> points;
   final Color color;
 
+  /// Text of a [DrawingTool.text] note (and an optional label on others).
+  final String? text;
+
+  /// Watch this line for price crossings — see
+  /// [CandlestickChart2D.onAlert]. Horizontal lines, trend lines and rays.
+  final bool alert;
+
   /// Fibonacci levels (0 = second point, 1 = first point).
   static const fibonacciLevels = [0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0];
 
-  const ChartDrawing({required this.id, required this.tool, required this.points, required this.color});
+  const ChartDrawing({
+    required this.id,
+    required this.tool,
+    required this.points,
+    required this.color,
+    this.text,
+    this.alert = false,
+  });
 
-  ChartDrawing copyWith({List<DrawingPoint>? points, Color? color}) =>
-      ChartDrawing(id: id, tool: tool, points: points ?? this.points, color: color ?? this.color);
+  ChartDrawing copyWith({List<DrawingPoint>? points, Color? color, String? text, bool? alert}) => ChartDrawing(
+        id: id,
+        tool: tool,
+        points: points ?? this.points,
+        color: color ?? this.color,
+        text: text ?? this.text,
+        alert: alert ?? this.alert,
+      );
 
   /// Price at Fibonacci [level].
   double fibonacciPrice(double level) {
@@ -69,6 +111,8 @@ class ChartDrawing {
         'tool': tool.name,
         'color': color.toARGB32(),
         'points': [for (final p in points) p.toJson()],
+        if (text != null) 'text': text!,
+        if (alert) 'alert': true,
       };
 
   factory ChartDrawing.fromJson(Map<String, dynamic> json) => ChartDrawing(
@@ -76,6 +120,8 @@ class ChartDrawing {
         tool: DrawingTool.values.byName(json['tool'] as String),
         color: Color((json['color'] as num).toInt()),
         points: [for (final p in json['points'] as List) DrawingPoint.fromJson((p as Map).cast<String, dynamic>())],
+        text: json['text'] as String?,
+        alert: json['alert'] == true,
       );
 }
 
@@ -88,6 +134,7 @@ class ChartDrawing {
 ///
 /// // From a toolbar:
 /// drawings.startDrawing(DrawingTool.trendLine);  // then drag (or click twice) on the chart
+/// drawings.setAlert(drawings.selectedId!, true); // fire onAlert when price crosses it
 /// drawings.removeSelected();                      // or press Delete / Backspace
 /// final saved = jsonEncode(drawings.toJson());    // persist…
 /// drawings.loadJson(jsonDecode(saved));           // …and restore
@@ -109,11 +156,26 @@ class ChartDrawingController extends ChangeNotifier {
   /// Keep the tool active after finishing a drawing (to draw several).
   bool keepToolActive;
 
+  /// Snap points to the nearest open/high/low/close of the candle under
+  /// the pointer (when within a few pixels).
+  bool magnet;
+
+  /// Text for the next [DrawingTool.text] note.
+  String noteText;
+
   ChartDrawingController({
     List<ChartDrawing> drawings = const [],
     this.color = const Color(0xFF2962FF),
     this.keepToolActive = false,
+    this.magnet = false,
+    this.noteText = 'Note',
   }) : _drawings = [...drawings];
+
+  /// Turns price alerts on or off for drawing [id].
+  void setAlert(String id, bool enabled) {
+    final d = _drawings.where((d) => d.id == id).firstOrNull;
+    if (d != null) update(d.copyWith(alert: enabled));
+  }
 
   List<ChartDrawing> get drawings => List.unmodifiable(_drawings);
   DrawingTool? get activeTool => _tool;
@@ -202,4 +264,28 @@ class ChartDrawingController extends ChangeNotifier {
     _selectedId = null;
     notifyListeners();
   }
+}
+
+/// A price crossing of an alert drawing, reported by
+/// [CandlestickChart2D.onAlert].
+@immutable
+class DrawingAlert {
+  final ChartDrawing drawing;
+
+  /// The line's price at the crossing.
+  final double level;
+  final double previousPrice;
+  final double price;
+  final DateTime time;
+
+  const DrawingAlert({
+    required this.drawing,
+    required this.level,
+    required this.previousPrice,
+    required this.price,
+    required this.time,
+  });
+
+  /// Whether price crossed from below to above.
+  bool get crossedUp => price > previousPrice;
 }

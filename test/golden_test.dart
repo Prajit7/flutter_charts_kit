@@ -331,6 +331,103 @@ final Map<String, Widget Function()> _charts = {
           ]),
         ]),
       ),
+  'candles_indicators_v2': () => CandlestickChart2D(
+        candles: _goldenCandles,
+        enableAnimation: false,
+        indicators: const [SupertrendIndicator(period: 5, multiplier: 2), StochasticIndicator(), AdxIndicator(period: 7)],
+        compare: [
+          CandleComparison(
+            label: 'B',
+            color: const Color(0xFFFF6D00),
+            candles: [for (final c in _goldenCandles) Candle(time: c.time, open: c.open * 2, high: c.high * 2, low: c.low * 2, close: c.close * 2 + (c.time.day % 5))],
+          ),
+        ],
+      ),
+  'candles_drawings_v2': () => CandlestickChart2D(
+        candles: _goldenCandles,
+        enableAnimation: false,
+        drawingController: ChartDrawingController(drawings: [
+          ChartDrawing(id: 'c', tool: DrawingTool.parallelChannel, color: const Color(0xFF2962FF), points: [
+            DrawingPoint(_goldenCandles[2].time, _goldenCandles[2].low),
+            DrawingPoint(_goldenCandles[25].time, _goldenCandles[25].low),
+            DrawingPoint(_goldenCandles[2].time, _goldenCandles[2].low + 8),
+          ]),
+          ChartDrawing(id: 'm', tool: DrawingTool.measure, color: const Color(0xFF26A69A), points: [
+            DrawingPoint(_goldenCandles[5].time, _goldenCandles[5].low),
+            DrawingPoint(_goldenCandles[15].time, _goldenCandles[15].high),
+          ]),
+          ChartDrawing(id: 'n', tool: DrawingTool.text, color: const Color(0xFF8E24AA), text: 'Note', points: [
+            DrawingPoint(_goldenCandles[18].time, _goldenCandles[18].high),
+          ]),
+          ChartDrawing(id: 'a', tool: DrawingTool.horizontalLine, color: const Color(0xFFFF9800), alert: true, points: [
+            DrawingPoint(_goldenCandles[0].time, _goldenCandles[27].high),
+          ]),
+        ]),
+      ),
+  'option_greeks': () => const OptionGreeksChart2D(
+        spot: 100,
+        daysToExpiry: 15,
+        volatility: 0.25,
+        enableAnimation: false,
+        legs: [OptionLeg.call(strike: 100, premium: 2, quantity: -1), OptionLeg.put(strike: 100, premium: 2, quantity: -1)],
+      ),
+  'bump': () => const BumpChart2D(
+        enableAnimation: false,
+        periods: ['A', 'B', 'C', 'D'],
+        series: [
+          CategorySeries(name: 'X', color: Color(0xFF3949AB), values: [1, 5, 3, 9]),
+          CategorySeries(name: 'Y', color: Color(0xFF00897B), values: [4, 2, 6, 5]),
+          CategorySeries(name: 'Z', color: Color(0xFFF4511E), values: [6, 3, 1, 2]),
+        ],
+      ),
+  'slope': () => const SlopeChart2D(
+        enableAnimation: false,
+        items: [SlopeItem(label: 'A', start: 10, end: 14), SlopeItem(label: 'B', start: 12, end: 9), SlopeItem(label: 'C', start: 7, end: 8)],
+      ),
+  'marimekko': () => const MarimekkoChart2D(
+        enableAnimation: false,
+        categories: ['P', 'Q', 'R'],
+        series: [
+          CategorySeries(name: 'S1', color: Color(0xFF3949AB), values: [30, 10, 20]),
+          CategorySeries(name: 'S2', color: Color(0xFF00897B), values: [20, 25, 5]),
+        ],
+      ),
+  'streamgraph': () => const StreamgraphChart2D(
+        enableAnimation: false,
+        labels: ['1', '2', '3', '4', '5', '6'],
+        series: [
+          CategorySeries(name: 'A', color: Color(0xFFEC407A), values: [5, 8, 12, 9, 6, 4]),
+          CategorySeries(name: 'B', color: Color(0xFF7E57C2), values: [3, 4, 6, 10, 12, 9]),
+          CategorySeries(name: 'C', color: Color(0xFF26A69A), values: [8, 6, 4, 4, 5, 8]),
+        ],
+      ),
+  'beeswarm': () => const BeeswarmChart2D(
+        enableAnimation: false,
+        groups: [
+          BeeswarmGroup(label: 'G1', color: Color(0xFF3949AB), values: [10, 11, 11, 12, 12, 12, 13, 13, 14, 20]),
+          BeeswarmGroup(label: 'G2', color: Color(0xFFF4511E), values: [15, 16, 16, 17, 17, 18, 19, 25]),
+        ],
+      ),
+  'ridgeline': () => const RidgelineChart2D(
+        enableAnimation: false,
+        groups: [
+          RidgelineGroup(label: 'A', values: [1, 2, 2, 3, 3, 3, 4, 4, 5]),
+          RidgelineGroup(label: 'B', values: [3, 4, 4, 5, 5, 5, 6, 6, 7]),
+          RidgelineGroup(label: 'C', values: [5, 6, 6, 7, 7, 7, 8, 9, 9]),
+        ],
+      ),
+  'tree': () => const TreeChart2D(
+        root: TreeChartNode(label: 'Root', subtitle: 'r', children: [
+          TreeChartNode(label: 'A', children: [TreeChartNode(label: 'A1'), TreeChartNode(label: 'A2')]),
+          TreeChartNode(label: 'B', children: [TreeChartNode(label: 'B1')]),
+        ]),
+      ),
+  'timeline': () => TimelineChart2D(events: [
+        TimelineEvent(start: DateTime(2026, 1, 1), title: 'One'),
+        TimelineEvent(start: DateTime(2026, 2, 1), end: DateTime(2026, 4, 1), title: 'Span'),
+        TimelineEvent(start: DateTime(2026, 3, 1), title: 'Two'),
+        TimelineEvent(start: DateTime(2026, 5, 1), title: 'Three'),
+      ]),
   'candles_renko': () => CandlestickChart2D(candles: _goldenCandles, candleType: CandleType.renko, enableAnimation: false),
   'network_graph': () => NetworkGraph2D(
         enableAnimation: false,

@@ -256,6 +256,45 @@ abstract final class OptionMath {
     return total;
   }
 
+  /// A whole position's Greeks at [spot]: each leg's Black-Scholes Greeks
+  /// × quantity × lot size, summed. [OptionGreeks.price] is the position's
+  /// P&L (as [payoffBeforeExpiry]).
+  static OptionGreeks positionGreeks(
+    List<OptionLeg> legs,
+    double spot, {
+    required double daysToExpiry,
+    double daysElapsed = 0,
+    double volatility = 0.2,
+    double rate = 0,
+  }) {
+    double delta = 0, gamma = 0, theta = 0, vega = 0, rho = 0;
+    for (final l in legs) {
+      final m = l.quantity * l.lotSize;
+      final g = greeks(
+        type: l.type,
+        spot: spot,
+        strike: l.strike,
+        years: ((l.daysToExpiry ?? daysToExpiry) - daysElapsed) / 365,
+        volatility: l.iv ?? volatility,
+        rate: rate,
+      );
+      delta += m * g.delta;
+      gamma += m * g.gamma;
+      theta += m * g.theta;
+      vega += m * g.vega;
+      rho += m * g.rho;
+    }
+    return OptionGreeks(
+      price: payoffBeforeExpiry(legs, spot,
+          daysToExpiry: daysToExpiry, daysElapsed: daysElapsed, volatility: volatility, rate: rate),
+      delta: delta,
+      gamma: gamma,
+      theta: theta,
+      vega: vega,
+      rho: rho,
+    );
+  }
+
   /// Net premium: positive = credit received, negative = debit paid.
   static double netPremium(List<OptionLeg> legs) => legs
       .where((l) => l.type != OptionType.underlying)

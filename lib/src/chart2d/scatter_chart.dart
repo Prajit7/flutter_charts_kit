@@ -2,6 +2,7 @@ import 'dart:ui' show PointMode;
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'keyboard_nav.dart';
 import 'models.dart';
 import 'legend.dart';
 import 'cartesian_axes.dart';
@@ -68,6 +69,7 @@ class ScatterChart2D extends StatefulWidget {
   final String? xAxisTitle;
   final String? yAxisTitle;
   final String emptyStateMessage;
+
   /// How x values are interpreted. With [ChartAxisType.time], x is
   /// milliseconds since epoch (see [ChartPoint.at]) and ticks fall on
   /// calendar boundaries.
@@ -166,8 +168,7 @@ class ScatterChart2D extends StatefulWidget {
 class _ScatterChart2DState extends State<ScatterChart2D>
     with SingleTickerProviderStateMixin, ChartControllerMixin<ScatterChart2D> {
   final ValueNotifier<Set<String>> _hiddenNotifier = ValueNotifier(const {});
-  final ValueNotifier<_ScatterInteraction> _interactionNotifier =
-      ValueNotifier(const _ScatterInteraction());
+  final ValueNotifier<_ScatterInteraction> _interactionNotifier = ValueNotifier(const _ScatterInteraction());
   late final AnimationController _controller;
 
   final _dragZoom = ChartDragZoom();
@@ -232,7 +233,8 @@ class _ScatterChart2DState extends State<ScatterChart2D>
     final zoomEnabled = widget.zoomMode != ChartZoomMode.none;
     return ChartFrame(
       boundaryKey: chartBoundaryKey,
-      semanticLabel: describeChart('Scatter chart', widget.title, [for (final s in widget.series) '${s.name}: ${s.data.length} points']),
+      semanticLabel: describeChart(
+          'Scatter chart', widget.title, [for (final s in widget.series) '${s.name}: ${s.data.length} points']),
       title: widget.title,
       subtitle: widget.subtitle,
       legendPosition: widget.legendPosition,
@@ -241,98 +243,107 @@ class _ScatterChart2DState extends State<ScatterChart2D>
         valueListenable: _hiddenNotifier,
         builder: (context, hidden, _) {
           final visibleSeries = widget.series.where((s) => !hidden.contains(s.name)).toList();
-          return LayoutBuilder(
-            builder: (context, constraints) {
-              // Measure the plot area itself: the legend can wrap to several
-              // rows, so its size is not a fixed constant.
-              final size = constraints.biggest;
-              return MouseRegion(
-                onHover: (e) => _updateHover(e.localPosition, size, visibleSeries),
-                onExit: (_) {
-                  _interactionNotifier.value = _interactionNotifier.value.copyWith(clearHover: true);
-                  widget.onPointHover?.call(null, null);
-                  widget.crosshairSync?.clear(this);
-                },
-                child: GestureDetector(
-                  onTapUp: (d) => _handleTap(d.localPosition, size, visibleSeries),
-                  onPanStart: zoomEnabled ? (d) => _handlePanStart(d.localPosition, size) : null,
-                  onPanUpdate: zoomEnabled ? (d) => _handlePanUpdate(d.localPosition, size) : null,
-                  onPanEnd: zoomEnabled ? (_) => _handlePanEnd(size, visibleSeries) : null,
-                  child: ValueListenableBuilder<_ScatterInteraction>(
-                    valueListenable: _interactionNotifier,
-                    builder: (context, interaction, __) {
-                      return Stack(
-                        children: [
-                          // Data layer repaints only on data/zoom/animation changes;
-                          // hover draws on the overlay below it.
-                          RepaintBoundary(
-                            child: AnimatedBuilder(
-                            animation: _controller,
-                            builder: (context, _) => CustomPaint(
-                              size: size,
-                              painter: _ScatterChartPainter(
-                                series: visibleSeries,
-                                theme: theme,
-                                xAxisTitle: widget.xAxisTitle,
-                                yAxisTitle: widget.yAxisTitle,
-                                xAxisType: widget.xAxisType,
-                                logX: _logX,
-                                logY: _logY,
-                                xTickFormatter: widget.xTickFormatter,
-                                yTickFormatter: widget.yTickFormatter,
-                                showGrid: widget.showGrid,
-                                defaultRadius: widget.defaultPointRadius,
-                                referenceLines: widget.referenceLines,
-                                referenceBands: widget.referenceBands,
-                                annotations: widget.annotations,
-                                showPointLabels: widget.showPointLabels,
-                                progress: _controller.value,
-                                zoom: interaction.zoom,
-                              ),
-                            ),
-                          ),
-                          ),
-                          if (interaction.hover != null)
-                            IgnorePointer(
-                              child: CustomPaint(
-                                size: size,
-                                painter: _ScatterHoverPainter(
-                                  hover: interaction.hover!,
-                                  color: widget.series.firstWhere((s) => s.name == interaction.hover!.series).color,
-                                  radius: interaction.hover!.point.size ?? widget.defaultPointRadius,
-                                  crosshair: widget.showCrosshair,
-                                  theme: theme,
+          return ChartKeyboardPlot(
+              itemsKey: Object.hashAll(visibleSeries.map((s) => s.data.length)),
+              hitTest: (p, size) {
+                final h = _hitTest(p, size, visibleSeries);
+                return h == null ? null : (h.series, h.point.x, h.point.y);
+              },
+              onNavigate: (p, size) => p == null ? _applyHover(null) : _updateHover(p, size, visibleSeries),
+              onActivate: (p, size) => _handleTap(p, size, visibleSeries),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  // Measure the plot area itself: the legend can wrap to several
+                  // rows, so its size is not a fixed constant.
+                  final size = constraints.biggest;
+                  return MouseRegion(
+                    onHover: (e) => _updateHover(e.localPosition, size, visibleSeries),
+                    onExit: (_) {
+                      _interactionNotifier.value = _interactionNotifier.value.copyWith(clearHover: true);
+                      widget.onPointHover?.call(null, null);
+                      widget.crosshairSync?.clear(this);
+                    },
+                    child: GestureDetector(
+                      onTapUp: (d) => _handleTap(d.localPosition, size, visibleSeries),
+                      onPanStart: zoomEnabled ? (d) => _handlePanStart(d.localPosition, size) : null,
+                      onPanUpdate: zoomEnabled ? (d) => _handlePanUpdate(d.localPosition, size) : null,
+                      onPanEnd: zoomEnabled ? (_) => _handlePanEnd(size, visibleSeries) : null,
+                      child: ValueListenableBuilder<_ScatterInteraction>(
+                        valueListenable: _interactionNotifier,
+                        builder: (context, interaction, __) {
+                          return Stack(
+                            children: [
+                              // Data layer repaints only on data/zoom/animation changes;
+                              // hover draws on the overlay below it.
+                              RepaintBoundary(
+                                child: AnimatedBuilder(
+                                  animation: _controller,
+                                  builder: (context, _) => CustomPaint(
+                                    size: size,
+                                    painter: _ScatterChartPainter(
+                                      series: visibleSeries,
+                                      theme: theme,
+                                      xAxisTitle: widget.xAxisTitle,
+                                      yAxisTitle: widget.yAxisTitle,
+                                      xAxisType: widget.xAxisType,
+                                      logX: _logX,
+                                      logY: _logY,
+                                      xTickFormatter: widget.xTickFormatter,
+                                      yTickFormatter: widget.yTickFormatter,
+                                      showGrid: widget.showGrid,
+                                      defaultRadius: widget.defaultPointRadius,
+                                      referenceLines: widget.referenceLines,
+                                      referenceBands: widget.referenceBands,
+                                      annotations: widget.annotations,
+                                      showPointLabels: widget.showPointLabels,
+                                      progress: _controller.value,
+                                      zoom: interaction.zoom,
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ),
-                          if (interaction.dragRectScreen != null)
-                            ChartSelectionOverlay(rect: interaction.dragRectScreen!, theme: theme),
-                          if (interaction.zoom != null)
-                            Positioned(right: 8, top: 8, child: ChartResetZoomButton(theme: theme, onTap: resetZoom)),
-                          if (interaction.hover != null) _buildTooltip(interaction.hover!, size, theme),
-                          if (widget.crosshairSync != null && interaction.hover == null)
-                            IgnorePointer(
-                              child: ListenableBuilder(
-                                listenable: widget.crosshairSync!,
-                                builder: (context, _) {
-                                  final x = widget.crosshairSync!.xFor(this);
-                                  if (x == null) return const SizedBox.shrink();
-                                  return CustomPaint(
+                              if (interaction.hover != null)
+                                IgnorePointer(
+                                  child: CustomPaint(
                                     size: size,
-                                    painter: SyncCrosshairPainter(
-                                        axes: _axesFor(size, visibleSeries, interaction.zoom), x: x, theme: theme),
-                                  );
-                                },
-                              ),
-                            ),
-                        ],
-                      );
-                    },
-                  ),
-                ),
-              );
-            },
-          );
+                                    painter: _ScatterHoverPainter(
+                                      hover: interaction.hover!,
+                                      color: widget.series.firstWhere((s) => s.name == interaction.hover!.series).color,
+                                      radius: interaction.hover!.point.size ?? widget.defaultPointRadius,
+                                      crosshair: widget.showCrosshair,
+                                      theme: theme,
+                                    ),
+                                  ),
+                                ),
+                              if (interaction.dragRectScreen != null)
+                                ChartSelectionOverlay(rect: interaction.dragRectScreen!, theme: theme),
+                              if (interaction.zoom != null)
+                                Positioned(
+                                    right: 8, top: 8, child: ChartResetZoomButton(theme: theme, onTap: resetZoom)),
+                              if (interaction.hover != null) _buildTooltip(interaction.hover!, size, theme),
+                              if (widget.crosshairSync != null && interaction.hover == null)
+                                IgnorePointer(
+                                  child: ListenableBuilder(
+                                    listenable: widget.crosshairSync!,
+                                    builder: (context, _) {
+                                      final x = widget.crosshairSync!.xFor(this);
+                                      if (x == null) return const SizedBox.shrink();
+                                      return CustomPaint(
+                                        size: size,
+                                        painter: SyncCrosshairPainter(
+                                            axes: _axesFor(size, visibleSeries, interaction.zoom), x: x, theme: theme),
+                                      );
+                                    },
+                                  ),
+                                ),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+                  );
+                },
+              ));
         },
       ),
     );
@@ -437,8 +448,7 @@ class _ScatterChart2DState extends State<ScatterChart2D>
     );
   }
 
-  ({String series, ChartPoint point, Offset screenPos})? _hitTest(
-      Offset pos, Size size, List<XySeries> visibleSeries) {
+  ({String series, ChartPoint point, Offset screenPos})? _hitTest(Offset pos, Size size, List<XySeries> visibleSeries) {
     if (visibleSeries.isEmpty) return null;
     final axes = _axesFor(size, visibleSeries, _interactionNotifier.value.zoom);
     final bounds = (minX: axes.minX, maxX: axes.maxX, minY: axes.minY, maxY: axes.maxY);
@@ -476,13 +486,15 @@ class _ScatterChart2DState extends State<ScatterChart2D>
     return positionChartTooltip(
       anchor: hover.screenPos,
       areaSize: size,
-      child: custom != null ? custom(context, hover.series, hover.point) : ChartTooltipCard(
-        theme: theme,
-        width: 150,
-        title: hover.series,
-        subtitle: hover.point.label ?? coords,
-        value: hover.point.label != null ? coords : null,
-      ),
+      child: custom != null
+          ? custom(context, hover.series, hover.point)
+          : ChartTooltipCard(
+              theme: theme,
+              width: 150,
+              title: hover.series,
+              subtitle: hover.point.label ?? coords,
+              value: hover.point.label != null ? coords : null,
+            ),
     );
   }
 }
@@ -652,7 +664,9 @@ class _ScatterChartPainter extends CustomPainter {
     if (showPointLabels && progress >= 1) {
       for (final s in series) {
         for (final p in s.data) {
-          if (p.label == null || p.x < bounds.minX || p.x > bounds.maxX || p.y < bounds.minY || p.y > bounds.maxY) continue;
+          if (p.label == null || p.x < bounds.minX || p.x > bounds.maxX || p.y < bounds.minY || p.y > bounds.maxY) {
+            continue;
+          }
           final r = p.size ?? defaultRadius;
           final size = axes.measureLabel(p.label!);
           axes.drawLabel(canvas, p.label!, Offset(axes.toScreenX(p.x) + r + 3, axes.toScreenY(p.y) - size.height / 2));
@@ -698,7 +712,8 @@ class _ScatterHoverPainter extends CustomPainter {
   final bool crosshair;
   final ChartTheme theme;
 
-  _ScatterHoverPainter({required this.hover, required this.color, required this.radius, required this.crosshair, required this.theme});
+  _ScatterHoverPainter(
+      {required this.hover, required this.color, required this.radius, required this.crosshair, required this.theme});
 
   @override
   void paint(Canvas canvas, Size size) {

@@ -21,6 +21,8 @@ import 'package:flutter_charts_kit/flutter_charts_kit.dart';
 import '../example/lib/advanced_charts.dart' show networkDemo, chordDemo, parallelDemo, formatPopulation;
 // ignore: avoid_relative_lib_imports
 import '../example/lib/options_charts.dart';
+// ignore: avoid_relative_lib_imports
+import '../example/lib/story_charts.dart';
 
 Future<void> _loadFonts() async {
   final root = Platform.environment['FLUTTER_ROOT'] ?? '';
@@ -643,7 +645,7 @@ void main() {
         oiDemo(),
         const LiveDepthDemo(live: false),
         smileDemo(),
-        const TradingToolsDemo(animate: false),
+        const TradingToolsDemo(animate: false, live: false),
         CandlestickChart2D(
           title: 'Renko (auto box size)',
           candles: sampleCandles(),
@@ -652,6 +654,50 @@ void main() {
         ),
       ]),
       const Size(1500, 1500),
+    );
+  });
+
+  testWidgets('Trading tools', (tester) async {
+    await _shoot(
+      tester,
+      'trading_tools.png',
+      _gallery('Indicators, comparison, alerts and Greeks', 2, [
+        const TradingToolsDemo(
+          animate: false,
+          live: false,
+          initialType: CandleType.standard,
+          initialIndicators: {'Supertrend', 'Stochastic'},
+          initialCompare: true,
+        ),
+        CandlestickChart2D(
+          title: 'Ichimoku, weekly pivots, ADX',
+          candles: sampleCandles(),
+          enableAnimation: false,
+          visibleCandles: 90,
+          indicators: const [IchimokuIndicator(), PivotPointsIndicator(period: PivotPeriod.week), AdxIndicator()],
+        ),
+        greeksDemo(animate: false),
+        oiTrendDemo(animate: false),
+      ]),
+      const Size(1500, 1300),
+    );
+  });
+
+  testWidgets('Story charts', (tester) async {
+    await _shoot(
+      tester,
+      'stories.png',
+      _gallery('Rankings, flows, distributions and structure', 3, [
+        bumpDemo(animate: false),
+        slopeDemo(animate: false),
+        marimekkoDemo(animate: false),
+        streamDemo(animate: false),
+        beeswarmDemo(animate: false),
+        ridgelineDemo(animate: false),
+        treeDemo(),
+        timelineDemo(),
+      ]),
+      const Size(1800, 1500),
     );
   });
 }

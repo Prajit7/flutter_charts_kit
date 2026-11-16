@@ -36,6 +36,19 @@
   <img src="example/assets/options.png" alt="Option payoff, open interest by strike, market depth, volatility smile, Heikin-Ashi with volume profile and drawings, Renko" width="100%">
 </p>
 <p align="center">
+  <img src="example/assets/trading_tools.png" alt="Supertrend and Stochastic with symbol comparison, Ichimoku and pivots with ADX, option Greeks, OI and PCR through the session" width="100%">
+</p>
+<p align="center">
+  <img src="example/assets/stories.png" alt="Bump, slope, Marimekko, streamgraph, beeswarm, ridgeline, org chart and timeline" width="100%">
+</p>
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Prajit7/flutter_charts_kit/main/doc/media/drawing_tools.gif" alt="Drawing a trend line, Fibonacci retracement and price level on a candlestick chart" width="49%">
+  <img src="https://raw.githubusercontent.com/Prajit7/flutter_charts_kit/main/doc/media/linked_crosshairs.gif" alt="Two charts with linked crosshairs" width="49%">
+</p>
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Prajit7/flutter_charts_kit/main/doc/media/sunburst_drilldown.gif" alt="Sunburst drill-down and back" width="49%">
+</p>
+<p align="center">
   <img src="example/assets/graphs_maps.png" alt="World choropleth map, force-directed network graph, chord diagram and parallel coordinates" width="100%">
 </p>
 
@@ -50,8 +63,11 @@
 | 🍩 **Pie & donut** | Hover highlight, percentage labels, pinch zoom & pan |
 | ⚬ **Scatter & bubble** | Per-point size, XY drag-to-zoom |
 | 🟩 **Heatmap** | Row × column grid, gradient color scale, missing values, cell labels |
-| 🕯️ **Trading chart** | Candles/OHLC, Heikin-Ashi, Renko, line break, volume and volume profile, live last-price tag, SMA/EMA, Bollinger, VWAP, RSI, MACD, drawing tools (trendlines, levels, Fibonacci), dark by default |
-| 🎯 **Options** | Strategy payoff (expiry + today curves, breakevens, max profit/loss), open interest by strike with max pain and PCR, market depth, volatility smile; Black-Scholes, Greeks and implied volatility in pure Dart |
+| 🕯️ **Trading chart** | Candles/OHLC, Heikin-Ashi, Renko, line break, volume and volume profile, live last-price tag, symbol comparison; SMA/EMA, Bollinger, VWAP, RSI, MACD, Supertrend, ATR, Stochastic, ADX, Ichimoku, pivot points; drawing tools (trendline, ray, level, channel, Fibonacci, box, measure, note) with magnet snap and price alerts; dark by default |
+| 🎯 **Options** | Strategy payoff (expiry + today curves, breakevens, max profit/loss), Greeks across prices, open interest by strike with max pain and PCR, OI/PCR through the session, market depth, volatility smile; Black-Scholes, Greeks and implied volatility in pure Dart |
+| 📖 **Stories** | Bump (rankings), slope (before/after), Marimekko, streamgraph, beeswarm, ridgeline, tree/org chart, timeline |
+| ♿ **Accessible** | Screen-reader summaries, arrow-key navigation through data points with spoken values, chart ⇄ data-table toggle |
+| 🌍 **Locale-aware** | `ChartLocale` number, currency, percent and date formats (Indian lakh/crore, European separators) without `intl` |
 | 🕸️ **Radar** | Multi-series spider chart with polygon or circular grid |
 | ⏱️ **Gauge** | Arc or needle, colored ranges, animates between values |
 | 📶 **Histogram & box plot** | Automatic nice binning; quartiles, whiskers and outliers |
@@ -72,7 +88,7 @@ labels, colors and a value formatter.
 
 ```yaml
 dependencies:
-  flutter_charts_kit: ^0.2.0
+  flutter_charts_kit: ^0.3.0
 ```
 
 ## Usage
@@ -612,6 +628,21 @@ CandlestickChart2D(
 )
 ```
 
+More indicators: `SupertrendIndicator`, `IchimokuIndicator`,
+`PivotPointsIndicator(period: PivotPeriod.week)` (overlays) and
+`AtrIndicator`, `StochasticIndicator`, `AdxIndicator` (own panes). Their maths
+is public too: `supertrend(candles, 10, 3)`, `adx(candles, 14)`, …
+
+Compare against other symbols — lines rebased to this symbol's price at the
+first visible candle, with each one's % change over the view:
+
+```dart
+CandlestickChart2D(
+  candles: nifty,
+  compare: [CandleComparison(label: 'BANKNIFTY', candles: bank, color: Colors.orange)],
+)
+```
+
 - **Gap-free:** candles are spaced evenly, so nights, weekends and holidays
   leave no gaps; the time axis labels day/month/year boundaries.
 - **Live data:** feed trades into `LiveCandles`, which builds the candles
@@ -662,7 +693,11 @@ CandlestickChart2D(
 )
 
 // From your toolbar:
-drawings.startDrawing(DrawingTool.trendLine); // also ray, horizontalLine, fibonacci, rectangle
+drawings.startDrawing(DrawingTool.trendLine); // also ray, horizontalLine, parallelChannel,
+                                              // fibonacci, rectangle, measure, text
+drawings.magnet = true;                       // snap to open/high/low/close
+drawings.noteText = 'Breakout';               // text for the next DrawingTool.text note
+drawings.setAlert(id, true);                  // watch a level/trendline/ray (see onAlert)
 drawings.removeSelected();
 final saved = jsonEncode(drawings.toJson());  // persist per symbol…
 drawings.loadJson(jsonDecode(saved));         // …and restore
@@ -680,6 +715,19 @@ drawings.loadJson(jsonDecode(saved));         // …and restore
   to move it; Delete/Backspace removes it, Escape cancels. Points are stored
   as time + price, so drawings stay put through zoom, scroll and live
   updates, and can extend into the future.
+- **Price alerts:** set `alert` on a horizontal line, trend line or ray and
+  pass `onAlert:` — it fires when the last price crosses the line (trend
+  lines within their time span, rays from their first point on), and the
+  line shows a bell.
+
+```dart
+CandlestickChart2D(
+  candles: live.candles,
+  lastPrice: live.lastPrice,
+  drawingController: drawings,
+  onAlert: (a) => notify('${a.crossedUp ? 'Above' : 'Below'} ${a.level}'),
+)
+```
 
 ## Options
 
@@ -712,11 +760,20 @@ VolatilitySmileChart2D(spot: 24480, smiles: [
 ])
 ```
 
+```dart
+// The strategy's Greeks across prices (2×2 grid, linked crosshairs)
+OptionGreeksChart2D(legs: legs, spot: 24480, daysToExpiry: 6, volatility: 0.13)
+
+// Total call vs put OI and the PCR through the session
+OpenInterestTrendChart2D(snapshots: [OpenInterestSnapshot(time: t, callOI: 1.2e8, putOI: 1.1e8), ...])
+```
+
 The maths is public and dependency-free:
 
 ```dart
 OptionMath.blackScholes(type: OptionType.call, spot: 24480, strike: 24500, years: 6 / 365, volatility: 0.13);
 OptionMath.greeks(...);                // delta, gamma, theta (per day), vega, rho (per 1%)
+OptionMath.positionGreeks(legs, spot, daysToExpiry: 6);   // a whole strategy's Greeks
 OptionMath.impliedVolatility(price: 182, type: OptionType.call, spot: 24480, strike: 24500, years: 6 / 365);
 OptionMath.breakevens(legs); OptionMath.maxProfit(legs); OptionMath.maxLoss(legs); // null = unlimited
 OptionMath.maxPain([(strike, callOI, putOI), ...]);
@@ -726,6 +783,23 @@ Payoff details: `quantity` is signed (negative = sell), `lotSize` scales
 the P&L, `OptionLeg.underlying(price:)` adds a stock/future leg, and legs
 with a later `daysToExpiry` (calendars) keep their time value at the near
 expiry. Black-Scholes assumes European options with no dividends.
+
+## Rankings, flows, distributions and structure
+
+```dart
+BumpChart2D(periods: quarters, series: [...])        // rank per period, from values
+SlopeChart2D(items: [SlopeItem(label: 'Email', start: 5.6, end: 5.1)])
+MarimekkoChart2D(categories: segments, series: [...])  // width = segment size
+StreamgraphChart2D(labels: months, series: [...])      // baseline: silhouette / wiggle / zero
+BeeswarmChart2D(groups: [BeeswarmGroup(label: 'Mumbai', values: latencies, color: c)])
+RidgelineChart2D(groups: [RidgelineGroup(label: 'Jan', values: temps)])   // kernel density
+TreeChart2D(root: TreeChartNode(label: 'CEO', children: [...]), initialDepth: 2)
+TimelineChart2D(events: [TimelineEvent(start: d, title: 'Launch'), TimelineEvent(start: a, end: b, title: 'Beta')])
+```
+
+Tap a tree node to collapse/expand it; drag, pinch or scroll to move around
+trees and timelines. `BumpChart2D.rank`, `StreamgraphChart2D.stack`,
+`BeeswarmChart2D.swarm` and `RidgelineChart2D.density` expose the layouts.
 
 ## More chart types
 
@@ -777,7 +851,37 @@ need the binning or quartiles yourself.
 
 This is a small, purpose-built library, not a Highcharts clone. Things it
 does **not** do (yet): log scales on bar charts, SVG export of the 3D charts,
-or map tiles (choropleth maps draw your GeoJSON shapes only).
+map tiles (choropleth maps draw your GeoJSON shapes only), or value morphing
+on every chart type (line, bar, pie and radar glide between datasets; most
+others replay their entrance).
+
+### Formatting numbers and dates
+
+Every chart takes formatter functions. `ChartLocale` builds them without
+`intl` — pick a preset or follow the app's locale:
+
+```dart
+final f = ChartLocale.of(context);    // en-IN → ChartLocale.indian
+BarChart2D(yTickFormatter: f.compact, ...)                    // 12.3L, 4.5Cr
+LineChart2D(yTickFormatter: (v) => f.currency(v, decimals: 0), ...)  // ₹12,34,567
+GanttChart2D(dateFormatter: f.date, ...)                      // 16 Nov 2026
+ChartLocale.german.number(1234.5)                             // 1.234,5
+```
+
+### Performance
+
+Line charts downsample with LTTB to the pixels available, so hover stays
+cheap even with a million points. Indicative timings (debug-mode
+`flutter test`, no GPU raster — release builds are faster) are in
+[doc/benchmarks.md](doc/benchmarks.md); regenerate them with
+`flutter test tool/benchmark_test.dart`.
+
+| Scenario | Size | Median |
+|---|---|---|
+| Line chart: data update | 100k points | ~25 ms |
+| Line chart: hover | 100k points | ~2.6 ms |
+| Line chart: hover | 1M points | ~17 ms |
+| Candlestick: pan | 5k candles, 4 indicators | ~4 ms |
 
 ### Accessibility
 
@@ -786,10 +890,20 @@ summary — e.g. *"Line chart, Revenue. Revenue: 12 values from 80 to 210"*.
 To describe a chart yourself, wrap it in
 `Semantics(label: '...', excludeSemantics: true)`.
 
+- **Keyboard:** Tab to a chart, then the arrow keys step through its points,
+  bars, slices or cells (Home/End jump to the ends), showing each tooltip and
+  announcing it to screen readers; Enter taps, Escape clears. Works on line,
+  bar, scatter, pie and every hover-based chart. Wrap your own plots with
+  `ChartKeyboardNavigator`.
+- **Data table:** `ChartWithTable(chart: ..., table: ChartDataTable.fromCategorySeries(...))`
+  adds a chart ⇄ table toggle; `ChartDataTable.fromXySeries` and
+  `.fromSlices` cover the other data shapes.
+
 ### Regenerating screenshots
 
 `flutter test tool/screenshots_test.dart` re-renders `example/assets/*.png`
-with real fonts. Golden tests (`test/goldens/`) cover every chart in light
+with real fonts, and `flutter test tool/gifs_test.dart` records the
+`doc/media/*.gif` interactions (a small GIF encoder lives in `tool/`). Golden tests (`test/goldens/`) cover every chart in light
 and dark; refresh them with `flutter test --update-goldens test/golden_test.dart`. Contributions or follow-up
 requests welcome.
 

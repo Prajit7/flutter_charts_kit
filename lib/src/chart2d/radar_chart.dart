@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'cartesian_axes.dart';
 import 'legend.dart';
@@ -121,8 +122,42 @@ class _RadarGeometry {
   }
 }
 
-class _RadarChart2DState extends State<RadarChart2D> with ChartControllerMixin<RadarChart2D> {
+class _RadarChart2DState extends State<RadarChart2D>
+    with SingleTickerProviderStateMixin, ChartControllerMixin<RadarChart2D> {
   final ValueNotifier<Set<String>> _hidden = ValueNotifier(const {});
+
+  /// Value morph on data updates (same axes and series names).
+  late final AnimationController _morph =
+      AnimationController(vsync: this, duration: widget.animationDuration, value: 1);
+  Map<String, List<double>> _from = const {};
+
+  @override
+  void didUpdateWidget(covariant RadarChart2D oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final sameShape = listEquals(oldWidget.axes, widget.axes) &&
+        listEquals([for (final s in oldWidget.series) s.name], [for (final s in widget.series) s.name]);
+    if (sameShape && widget.enableAnimation && !listEquals(oldWidget.series, widget.series)) {
+      _from = {for (final s in _displayed(oldWidget.series)) s.name: s.values};
+      _morph.forward(from: 0);
+    }
+  }
+
+  /// [series] blended from [_from] at the morph's progress.
+  List<CategorySeries> _displayed(List<CategorySeries> series) {
+    final t = Curves.easeInOutCubic.transform(_morph.value);
+    if (t >= 1 || _from.isEmpty) return series;
+    return [
+      for (final s in series)
+        CategorySeries(name: s.name, color: s.color, values: [
+          for (int i = 0; i < s.values.length; i++)
+            () {
+              final a = _from[s.name], v = s.values[i];
+              final f = a != null && i < a.length ? a[i] : v;
+              return f + (v - f) * t;
+            }(),
+        ]),
+    ];
+  }
 
   @override
   ChartController? controllerOf(RadarChart2D widget) => widget.controller;
@@ -132,6 +167,7 @@ class _RadarChart2DState extends State<RadarChart2D> with ChartControllerMixin<R
 
   @override
   void dispose() {
+    _morph.dispose();
     _hidden.dispose();
     super.dispose();
   }
@@ -151,7 +187,8 @@ class _RadarChart2DState extends State<RadarChart2D> with ChartControllerMixin<R
     // Leave room around the web for the spoke labels.
     double labelWidth = 0;
     for (final a in widget.axes) {
-      labelWidth = math.max(labelWidth, layoutChartText(a, color: theme.tickTextColor, fontSize: theme.tickFontSize).width);
+      labelWidth =
+          math.max(labelWidth, layoutChartText(a, color: theme.tickTextColor, fontSize: theme.tickFontSize).width);
     }
     final pad = math.min(labelWidth, size.width * 0.22) + 10;
     final radius = math.max(0.0, math.min(size.width / 2 - pad, size.height / 2 - 18));
@@ -174,7 +211,10 @@ class _RadarChart2DState extends State<RadarChart2D> with ChartControllerMixin<R
 
     return ChartFrame(
       boundaryKey: chartBoundaryKey,
-      semanticLabel: describeChart('Radar chart', widget.title, ['${widget.axes.length} axes: ${widget.axes.join(', ')}', for (final s in widget.series) summarizeValues(s.name, s.values, widget.valueFormatter)]),
+      semanticLabel: describeChart('Radar chart', widget.title, [
+        '${widget.axes.length} axes: ${widget.axes.join(', ')}',
+        for (final s in widget.series) summarizeValues(s.name, s.values, widget.valueFormatter)
+      ]),
       title: widget.title,
       subtitle: widget.subtitle,
       legendPosition: widget.legendPosition,
@@ -196,52 +236,64 @@ class _RadarChart2DState extends State<RadarChart2D> with ChartControllerMixin<R
       plot: ValueListenableBuilder<Set<String>>(
         valueListenable: _hidden,
         builder: (context, hidden, _) {
-          final visible = widget.series.where((s) => !hidden.contains(s.name)).toList();
-          return HoverPlot<RadarHit>(
-            enableAnimation: widget.enableAnimation,
-            animationDuration: widget.animationDuration,
-            animationKey: Object.hash(Object.hashAll(widget.series), Object.hashAll(widget.axes)),
-            onHover: widget.onPointHover,
-            onTap: widget.onPointTap,
-            hitTest: (pos, size) {
-              final g = _geometry(size, theme);
-              RadarHit? best;
-              double bestDist = 18;
-              for (final s in visible) {
-                for (int i = 0; i < widget.axes.length; i++) {
-                  final d = (g.point(i, _value(s, i)) - pos).distance;
-                  if (d < bestDist) {
-                    bestDist = d;
-                    best = RadarHit(series: s.name, axisIndex: i, axis: widget.axes[i], value: _value(s, i));
+          // Rebuilt per morph frame; the entrance replays only when the
+          // chart's shape (axes or series names) changes.
+          return AnimatedBuilder(
+            animation: _morph,
+            builder: (context, _) {
+              final visible = _displayed(widget.series).where((s) => !hidden.contains(s.name)).toList();
+              return HoverPlot<RadarHit>(
+                enableAnimation: widget.enableAnimation,
+                animationDuration: widget.animationDuration,
+                animationKey:
+                    Object.hash(Object.hashAll(widget.series.map((s) => s.name)), Object.hashAll(widget.axes)),
+                onHover: widget.onPointHover,
+                onTap: widget.onPointTap,
+                hitTest: (pos, size) {
+                  final g = _geometry(size, theme);
+                  RadarHit? best;
+                  double bestDist = 18;
+                  for (final s in visible) {
+                    for (int i = 0; i < widget.axes.length; i++) {
+                      final d = (g.point(i, _value(s, i)) - pos).distance;
+                      if (d < bestDist) {
+                        bestDist = d;
+                        best = RadarHit(series: s.name, axisIndex: i, axis: widget.axes[i], value: _value(s, i));
+                      }
+                    }
                   }
-                }
-              }
-              return best;
-            },
-            painterBuilder: (size, hover, progress) => _RadarPainter(
-              geometry: _geometry(size, theme),
-              axes: widget.axes,
-              series: visible,
-              rings: widget.rings,
-              polygonGrid: widget.polygonGrid,
-              filled: widget.filled,
-              showPoints: widget.showPoints,
-              showRingLabels: widget.showRingLabels,
-              valueFormatter: widget.valueFormatter,
-              theme: theme,
-              hover: hover,
-              progress: Curves.easeOutCubic.transform(progress),
-            ),
-            tooltipBuilder: (context, hit, pointer, size) {
-              final s = visible.firstWhere((s) => s.name == hit.series);
-              final custom = widget.tooltipBuilder;
-              return positionChartTooltip(
-                anchor: _geometry(size, theme).point(hit.axisIndex, _value(s, hit.axisIndex)),
-                areaSize: size,
-                child: custom != null
-                    ? custom(context, hit)
-                    : ChartTooltipCard(
-                        theme: theme, width: 150, title: hit.series, subtitle: hit.axis, value: widget.valueFormatter(hit.value)),
+                  return best;
+                },
+                painterBuilder: (size, hover, progress) => _RadarPainter(
+                  geometry: _geometry(size, theme),
+                  axes: widget.axes,
+                  series: visible,
+                  rings: widget.rings,
+                  polygonGrid: widget.polygonGrid,
+                  filled: widget.filled,
+                  showPoints: widget.showPoints,
+                  showRingLabels: widget.showRingLabels,
+                  valueFormatter: widget.valueFormatter,
+                  theme: theme,
+                  hover: hover,
+                  progress: Curves.easeOutCubic.transform(progress),
+                ),
+                tooltipBuilder: (context, hit, pointer, size) {
+                  final s = visible.firstWhere((s) => s.name == hit.series);
+                  final custom = widget.tooltipBuilder;
+                  return positionChartTooltip(
+                    anchor: _geometry(size, theme).point(hit.axisIndex, _value(s, hit.axisIndex)),
+                    areaSize: size,
+                    child: custom != null
+                        ? custom(context, hit)
+                        : ChartTooltipCard(
+                            theme: theme,
+                            width: 150,
+                            title: hit.series,
+                            subtitle: hit.axis,
+                            value: widget.valueFormatter(hit.value)),
+                  );
+                },
               );
             },
           );
@@ -308,7 +360,8 @@ class _RadarPainter extends CustomPainter {
     for (int i = 0; i < g.spokes; i++) {
       final end = g.point(i, g.max);
       canvas.drawLine(g.center, end, gridPaint);
-      final tp = layoutChartText(axes[i], color: theme.axisColor, fontSize: theme.tickFontSize, fontFamily: theme.fontFamily);
+      final tp =
+          layoutChartText(axes[i], color: theme.axisColor, fontSize: theme.tickFontSize, fontFamily: theme.fontFamily);
       final dir = Offset(math.cos(g.angle(i)), math.sin(g.angle(i)));
       final anchor = end + dir * 8;
       // Align the label away from the web: right-aligned on the left side,
@@ -356,4 +409,3 @@ class _RadarPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _RadarPainter old) => true;
 }
-

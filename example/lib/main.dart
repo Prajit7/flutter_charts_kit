@@ -6,6 +6,7 @@ import 'three_d_page.dart';
 import 'business_charts.dart';
 import 'advanced_charts.dart';
 import 'options_charts.dart';
+import 'story_charts.dart';
 
 void main() => runApp(const ChartsDemoApp());
 
@@ -105,7 +106,7 @@ class ChartsDemoScreen extends StatelessWidget {
     final isMobile = Responsive.isMobile(context);
 
     return DefaultTabController(
-      length: 6,
+      length: 7,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Flutter Charts Kit'),
@@ -146,6 +147,10 @@ class ChartsDemoScreen extends StatelessWidget {
                 icon: const Icon(Icons.candlestick_chart_outlined),
                 text: isMobile ? 'Options' : 'Options & trading',
               ),
+              const Tab(
+                icon: Icon(Icons.auto_graph),
+                text: 'Stories',
+              ),
             ],
           ),
         ),
@@ -157,6 +162,7 @@ class ChartsDemoScreen extends StatelessWidget {
             BusinessChartsPage(),
             AdvancedChartsPage(),
             OptionsChartsPage(),
+            StoryChartsPage(),
           ],
         ),
       ),

@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'keyboard_nav.dart';
 import 'models.dart';
 import 'legend.dart';
 import 'cartesian_axes.dart';
@@ -101,6 +102,10 @@ class LineChart2D extends StatefulWidget {
   /// y-axis runs 0–100% and tooltips show each point's value and share.
   final bool percentStacked;
 
+  /// Start the y-axis at zero (default). Turn off for values that sit far
+  /// from zero (prices, open interest, ratios) so their changes fill the plot.
+  final bool includeZero;
+
   /// Linear (default) or logarithmic y-axis. A log axis shows only positive
   /// values, and doesn't combine meaningfully with stacking.
   final ChartAxisScale yAxisScale;
@@ -187,6 +192,7 @@ class LineChart2D extends StatefulWidget {
     this.filled = false,
     this.stacked = false,
     this.percentStacked = false,
+    this.includeZero = true,
     this.yAxisScale = ChartAxisScale.linear,
     this.showGrid = true,
     this.showLegend = true,
@@ -234,7 +240,9 @@ class _PlotSeries {
 /// totals across series — as percentages of the total at each x when
 /// [percent].
 List<_PlotSeries> _toPlotSeries(List<XySeries> series, bool stacked, {bool percent = false}) {
-  final sorted = [for (final s in series) [...s.data]..sort((a, b) => a.x.compareTo(b.x))];
+  final sorted = [
+    for (final s in series) [...s.data]..sort((a, b) => a.x.compareTo(b.x))
+  ];
   if (!stacked) {
     return [
       for (int i = 0; i < series.length; i++) _PlotSeries(series[i], sorted[i], [for (final p in sorted[i]) p.y], null),
@@ -308,8 +316,7 @@ List<_PlotSeries> _lerpSeries(List<_PlotSeries> from, List<_PlotSeries> to, doub
   ];
 }
 
-class _LineChart2DState extends State<LineChart2D>
-    with TickerProviderStateMixin, ChartControllerMixin<LineChart2D> {
+class _LineChart2DState extends State<LineChart2D> with TickerProviderStateMixin, ChartControllerMixin<LineChart2D> {
   final ValueNotifier<Set<String>> _hiddenNotifier = ValueNotifier(const {});
   final ValueNotifier<_LineInteraction> _interactionNotifier = ValueNotifier(const _LineInteraction());
   late final AnimationController _controller;
@@ -397,7 +404,8 @@ class _LineChart2DState extends State<LineChart2D>
 
     return ChartFrame(
       boundaryKey: chartBoundaryKey,
-      semanticLabel: describeChart('Line chart', widget.title, [for (final s in widget.series) summarizeValues(s.name, s.data.map((p) => p.y), widget.yTickFormatter)]),
+      semanticLabel: describeChart('Line chart', widget.title,
+          [for (final s in widget.series) summarizeValues(s.name, s.data.map((p) => p.y), widget.yTickFormatter)]),
       title: widget.title,
       subtitle: widget.subtitle,
       legendPosition: widget.legendPosition,
@@ -405,101 +413,113 @@ class _LineChart2DState extends State<LineChart2D>
       plot: ValueListenableBuilder<Set<String>>(
         valueListenable: _hiddenNotifier,
         builder: (context, hidden, _) {
-          final visible = _toPlotSeries(widget.series.where((s) => !hidden.contains(s.name)).toList(),
-              widget.stacked || widget.percentStacked,
+          final visible = _toPlotSeries(
+              widget.series.where((s) => !hidden.contains(s.name)).toList(), widget.stacked || widget.percentStacked,
               percent: widget.percentStacked);
           _lastPlotted = visible;
-          return LayoutBuilder(
-            builder: (context, constraints) {
-              // Measure the plot area itself: the legend can wrap to several
-              // rows, so its size is not a fixed constant.
-              final size = constraints.biggest;
-              final zoomEnabled = widget.zoomMode != ChartZoomMode.none;
-              return MouseRegion(
-                onHover: (e) => _applyHover(_hitTest(e.localPosition, size, visible)),
-                onExit: (_) {
-                  _interactionNotifier.value = _interactionNotifier.value.copyWith(clearHover: true);
-                  widget.onPointHover?.call(null, null);
-                  widget.crosshairSync?.clear(this);
-                },
-                child: GestureDetector(
-                  onTapUp: (d) => _handleTap(d.localPosition, size, visible),
-                  onPanStart: zoomEnabled ? (d) => _dragZoom.start(d.localPosition, Cartesian2DAxes.computePlotArea(size)) : null,
-                  onPanUpdate: zoomEnabled ? (d) => _handlePanUpdate(d.localPosition, size) : null,
-                  onPanEnd: zoomEnabled ? (_) => _handlePanEnd(size, visible) : null,
-                  child: ValueListenableBuilder<_LineInteraction>(
-                    valueListenable: _interactionNotifier,
-                    builder: (context, interaction, __) {
-                      return Stack(
-                        children: [
-                          // The data layer only repaints when the data, zoom or
-                          // animation change — hovering repaints just the overlay.
-                          RepaintBoundary(
-                            child: AnimatedBuilder(
-                            animation: Listenable.merge([_controller, _morph]),
-                            builder: (context, _) => CustomPaint(
-                              size: size,
-                              painter: _LineChartPainter(
-                                series: visible,
-                                theme: theme,
-                                xAxisTitle: widget.xAxisTitle,
-                                yAxisTitle: widget.yAxisTitle,
-                                xAxisType: widget.xAxisType,
-                                xTickFormatter: widget.xTickFormatter,
-                                yTickFormatter: widget.yTickFormatter,
-                                curve: widget.curve,
-                                filled: widget.filled,
-                                stacked: widget.stacked || widget.percentStacked,
-                                percent: widget.percentStacked,
-                                logY: _logY,
-                                showGrid: widget.showGrid,
-                                showPoints: widget.showPoints,
-                                lineWidth: widget.lineWidth,
-                                pointRadius: widget.pointRadius,
-                                referenceLines: widget.referenceLines,
-                                referenceBands: widget.referenceBands,
-                                annotations: widget.annotations,
-                                valueLabelFormatter: widget.showValueLabels
-                                    ? (widget.valueLabelFormatter ?? widget.yTickFormatter)
-                                    : null,
-                                progress: _controller.value,
-                                zoom: interaction.zoom,
-                                liveWindow: widget.liveWindow,
-                                downsample: widget.downsample,
-                                morphFrom: _morph.isAnimating ? _morphFrom : null,
-                                morphT: Curves.easeInOutCubic.transform(_morph.value),
-                              ),
-                            ),
-                          ),
-                          ),
-                          if (interaction.hover != null)
-                            IgnorePointer(
-                              child: CustomPaint(
-                                size: size,
-                                painter: _LineHoverPainter(
-                                  hover: interaction.hover!,
-                                  color: widget.series.firstWhere((s) => s.name == interaction.hover!.series).color,
-                                  pointRadius: widget.pointRadius,
-                                  crosshair: widget.showCrosshair,
-                                  theme: theme,
+          return ChartKeyboardPlot(
+              itemsKey: Object.hashAll(visible.map((s) => s.points.length)),
+              hitTest: (p, size) {
+                final h = _hitTest(p, size, visible);
+                return h == null ? null : (h.series, h.point.x, h.point.y);
+              },
+              onNavigate: (p, size) => _applyHover(p == null ? null : _hitTest(p, size, visible)),
+              onActivate: (p, size) => _handleTap(p, size, visible),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  // Measure the plot area itself: the legend can wrap to several
+                  // rows, so its size is not a fixed constant.
+                  final size = constraints.biggest;
+                  final zoomEnabled = widget.zoomMode != ChartZoomMode.none;
+                  return MouseRegion(
+                    onHover: (e) => _applyHover(_hitTest(e.localPosition, size, visible)),
+                    onExit: (_) {
+                      _interactionNotifier.value = _interactionNotifier.value.copyWith(clearHover: true);
+                      widget.onPointHover?.call(null, null);
+                      widget.crosshairSync?.clear(this);
+                    },
+                    child: GestureDetector(
+                      onTapUp: (d) => _handleTap(d.localPosition, size, visible),
+                      onPanStart: zoomEnabled
+                          ? (d) => _dragZoom.start(d.localPosition, Cartesian2DAxes.computePlotArea(size))
+                          : null,
+                      onPanUpdate: zoomEnabled ? (d) => _handlePanUpdate(d.localPosition, size) : null,
+                      onPanEnd: zoomEnabled ? (_) => _handlePanEnd(size, visible) : null,
+                      child: ValueListenableBuilder<_LineInteraction>(
+                        valueListenable: _interactionNotifier,
+                        builder: (context, interaction, __) {
+                          return Stack(
+                            children: [
+                              // The data layer only repaints when the data, zoom or
+                              // animation change — hovering repaints just the overlay.
+                              RepaintBoundary(
+                                child: AnimatedBuilder(
+                                  animation: Listenable.merge([_controller, _morph]),
+                                  builder: (context, _) => CustomPaint(
+                                    size: size,
+                                    painter: _LineChartPainter(
+                                      series: visible,
+                                      theme: theme,
+                                      xAxisTitle: widget.xAxisTitle,
+                                      yAxisTitle: widget.yAxisTitle,
+                                      xAxisType: widget.xAxisType,
+                                      xTickFormatter: widget.xTickFormatter,
+                                      yTickFormatter: widget.yTickFormatter,
+                                      curve: widget.curve,
+                                      filled: widget.filled,
+                                      stacked: widget.stacked || widget.percentStacked,
+                                      percent: widget.percentStacked,
+                                      includeZero: widget.includeZero,
+                                      logY: _logY,
+                                      showGrid: widget.showGrid,
+                                      showPoints: widget.showPoints,
+                                      lineWidth: widget.lineWidth,
+                                      pointRadius: widget.pointRadius,
+                                      referenceLines: widget.referenceLines,
+                                      referenceBands: widget.referenceBands,
+                                      annotations: widget.annotations,
+                                      valueLabelFormatter: widget.showValueLabels
+                                          ? (widget.valueLabelFormatter ?? widget.yTickFormatter)
+                                          : null,
+                                      progress: _controller.value,
+                                      zoom: interaction.zoom,
+                                      liveWindow: widget.liveWindow,
+                                      downsample: widget.downsample,
+                                      morphFrom: _morph.isAnimating ? _morphFrom : null,
+                                      morphT: Curves.easeInOutCubic.transform(_morph.value),
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ),
-                          if (interaction.dragRectScreen != null)
-                            ChartSelectionOverlay(rect: interaction.dragRectScreen!, theme: theme),
-                          if (interaction.zoom != null)
-                            Positioned(right: 8, top: 8, child: ChartResetZoomButton(theme: theme, onTap: resetZoom)),
-                          if (interaction.hover != null) _buildTooltip(interaction.hover!, size, theme),
-                          if (widget.crosshairSync != null && interaction.hover == null)
-                            _syncedCrosshair(size, visible, interaction.zoom, theme),
-                        ],
-                      );
-                    },
-                  ),
-                ),
-              );
-            },
-          );
+                              if (interaction.hover != null)
+                                IgnorePointer(
+                                  child: CustomPaint(
+                                    size: size,
+                                    painter: _LineHoverPainter(
+                                      hover: interaction.hover!,
+                                      color: widget.series.firstWhere((s) => s.name == interaction.hover!.series).color,
+                                      pointRadius: widget.pointRadius,
+                                      crosshair: widget.showCrosshair,
+                                      theme: theme,
+                                    ),
+                                  ),
+                                ),
+                              if (interaction.dragRectScreen != null)
+                                ChartSelectionOverlay(rect: interaction.dragRectScreen!, theme: theme),
+                              if (interaction.zoom != null)
+                                Positioned(
+                                    right: 8, top: 8, child: ChartResetZoomButton(theme: theme, onTap: resetZoom)),
+                              if (interaction.hover != null) _buildTooltip(interaction.hover!, size, theme),
+                              if (widget.crosshairSync != null && interaction.hover == null)
+                                _syncedCrosshair(size, visible, interaction.zoom, theme),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+                  );
+                },
+              ));
         },
       ),
     );
@@ -586,7 +606,8 @@ class _LineChart2DState extends State<LineChart2D>
   bool get _logY => widget.yAxisScale == ChartAxisScale.logarithmic;
 
   Cartesian2DAxes _axesFor(Size size, List<_PlotSeries> visible, ChartZoomWindow? zoom) {
-    final bounds = _effectiveBounds(visible, zoom, liveWindow: widget.liveWindow, logY: _logY, percent: widget.percentStacked);
+    final bounds = _effectiveBounds(visible, zoom,
+        liveWindow: widget.liveWindow, logY: _logY, percent: widget.percentStacked, includeZero: widget.includeZero);
     return Cartesian2DAxes(
       plotArea: Cartesian2DAxes.computePlotArea(size),
       minX: bounds.minX,
@@ -682,6 +703,7 @@ class _LineChart2DState extends State<LineChart2D>
   double? liveWindow,
   bool logY = false,
   bool percent = false,
+  bool includeZero = true,
 }) {
   if (zoom == null && liveWindow != null) {
     double latest = -double.infinity;
@@ -734,7 +756,12 @@ class _LineChart2DState extends State<LineChart2D>
   } else if (zoom == null) {
     // Only anchor at zero for the default, unzoomed view, and round out to
     // nice tick values so the top gridline sits on the plot's edge.
-    if (minY > 0) minY = 0;
+    if (includeZero && minY > 0) minY = 0;
+    if (!includeZero) {
+      final pad = (maxY - minY) * 0.06 + (maxY == minY ? 1 : 0);
+      minY -= pad;
+      maxY += pad;
+    }
     (minY, maxY) = Cartesian2DAxes.niceExtent(minY, maxY);
   } else {
     // Zoomed: tightly fit y to just the visible slice (with a little
@@ -762,6 +789,7 @@ class _LineChartPainter extends CustomPainter {
   final bool filled;
   final bool stacked;
   final bool percent;
+  final bool includeZero;
   final bool logY;
   final bool showGrid;
   final bool showPoints;
@@ -795,6 +823,7 @@ class _LineChartPainter extends CustomPainter {
     required this.filled,
     required this.stacked,
     required this.percent,
+    this.includeZero = true,
     required this.logY,
     required this.showGrid,
     required this.showPoints,
@@ -818,10 +847,12 @@ class _LineChartPainter extends CustomPainter {
 
     final from = morphFrom;
     final plotted = from == null ? series : _lerpSeries(from, series, morphT);
-    var bounds = _effectiveBounds(series, zoom, liveWindow: liveWindow, logY: logY, percent: percent);
+    var bounds =
+        _effectiveBounds(series, zoom, liveWindow: liveWindow, logY: logY, percent: percent, includeZero: includeZero);
     if (from != null && from.isNotEmpty) {
       // Glide the axes too, so values don't jump against a snapping scale.
-      final a = _effectiveBounds(from, zoom, liveWindow: liveWindow, logY: logY, percent: percent);
+      final a =
+          _effectiveBounds(from, zoom, liveWindow: liveWindow, logY: logY, percent: percent, includeZero: includeZero);
       double lerp(double x, double y) => x + (y - x) * morphT;
       bounds = (minX: bounds.minX, maxX: bounds.maxX, minY: lerp(a.minY, bounds.minY), maxY: lerp(a.maxY, bounds.maxY));
     }
@@ -873,7 +904,9 @@ class _LineChartPainter extends CustomPainter {
       final thinned = downsample && idx.length > maxPoints;
       if (thinned) {
         final all = idx;
-        idx = [for (final k in lttbIndices(all.length, (k) => s.points[all[k]].x, (k) => s.plotY[all[k]], maxPoints)) all[k]];
+        idx = [
+          for (final k in lttbIndices(all.length, (k) => s.points[all[k]].x, (k) => s.plotY[all[k]], maxPoints)) all[k]
+        ];
       }
       final pts = [for (final i in idx) Offset(axes.toScreenX(s.points[i].x), axes.toScreenY(s.plotY[i]))];
 
@@ -1005,7 +1038,12 @@ class _LineHoverPainter extends CustomPainter {
   final bool crosshair;
   final ChartTheme theme;
 
-  _LineHoverPainter({required this.hover, required this.color, required this.pointRadius, required this.crosshair, required this.theme});
+  _LineHoverPainter(
+      {required this.hover,
+      required this.color,
+      required this.pointRadius,
+      required this.crosshair,
+      required this.theme});
 
   @override
   void paint(Canvas canvas, Size size) {
