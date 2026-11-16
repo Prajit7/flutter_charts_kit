@@ -1,5 +1,55 @@
 # Changelog
 
+## 0.2.0
+
+### Added
+- `WaterfallChart2D`: bridge charts with running totals (`WaterfallStep.total`), connectors
+  and value labels.
+- `BulletChart`: a measure against a target over qualitative bands, with comparative markers;
+  horizontal or vertical.
+- `CalendarHeatmap`: one cell per day in week columns (GitHub-style), stepped or continuous
+  colors, month/weekday labels and a "Less … More" key.
+- `SunburstChart2D`: hierarchies as rings using `TreemapNode`; tap to drill down, tap the
+  centre to go back up.
+- `PolarBarChart2D`: rose (Nightingale) charts with stacked series and area-proportional
+  wedges, or radial bars.
+- `RangeChart2D`: floating range bars, dumbbells, error bars and shaded bands (`RangeValue`).
+- `BarChart2D.barStyle`: `BarStyle.lollipop`.
+- `GanttChart2D`: grouped tasks with progress, milestones, dependency arrows and a today line;
+  drag to scroll, pinch or wheel to zoom.
+- Log scales: `LineChart2D.yAxisScale` and `ScatterChart2D.xAxisScale` / `yAxisScale`
+  (`ChartAxisScale.logarithmic`), with power-of-ten ticks.
+- 100% stacking: `BarChart2D.percentStacked` and `LineChart2D.percentStacked`; tooltips and
+  callbacks report real values alongside shares.
+- `ChartAnnotation`: callouts pinned to data points on line, scatter, bar, combo and
+  candlestick charts.
+- Data labels: `LineChart2D.showValueLabels` / `valueLabelFormatter` and
+  `ScatterChart2D.showPointLabels`.
+- `ChartCrosshairSync`: linked crosshairs across line, scatter, bar, combo and candlestick
+  charts (`crosshairSync:`).
+- `ChartController.toSvg()`: SVG export of any 2D chart.
+
+- `NetworkGraph2D`: force-directed graph with groups, weighted and directed edges; drag nodes,
+  pan and zoom; hover highlights neighbours.
+- `ChordChart2D`: flows between groups as ribbons, with both directions in tooltips.
+- `ParallelCoordinatesChart2D`: one axis per measure, brushing filters with
+  `onSelectionChanged`, inverted axes, grouped legend.
+- `ChoroplethMap2D` + `GeoFeature.parse`: maps shaded by value from your own GeoJSON (no
+  bundled map data, no dependencies); Mercator or equirectangular, log color scale, pan/zoom.
+- Options: `OptionPayoffChart2D` (expiry and today P&L, breakevens, max profit/loss, expected
+  move), `OpenInterestChart2D` (calls vs puts per strike, spot, max pain, PCR, change view,
+  sideways scroll), `MarketDepthChart2D` (cumulative order book) and `VolatilitySmileChart2D`.
+- `OptionMath`: Black-Scholes prices and Greeks, implied volatility, strategy payoffs,
+  breakevens, max profit/loss, max pain and expected move — pure Dart.
+- `CandlestickChart2D.candleType`: Heikin-Ashi, Renko and line break (`CandleTransforms`).
+- `CandlestickChart2D.volumeProfile`: volume at price with point of control and value area.
+- Drawing tools on `CandlestickChart2D` via `ChartDrawingController`: trend line, ray,
+  horizontal level, Fibonacci retracement and rectangle; select, move, reshape, delete, and
+  save/restore as JSON.
+
+### Improved
+- Y-axis tick labels shrink to fit instead of overflowing the left margin (e.g. "10000").
+
 ## 0.1.0
 
 ### Breaking

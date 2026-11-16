@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'svg_export.dart';
 import 'package:flutter/gestures.dart';
 import 'models.dart';
 import 'legend.dart';
@@ -458,7 +459,7 @@ class _PieChartPainter extends CustomPainter {
   }
 
   void _drawCenteredText(Canvas canvas, String text, Offset center, {double opacity = 1}) {
-    final painter = TextPainter(
+    final painter = ChartTextPainter(
       text: TextSpan(
         text: text,
         style: TextStyle(color: Colors.white.withValues(alpha: opacity), fontSize: 11, fontWeight: FontWeight.w700, fontFamily: fontFamily),

@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'svg_export.dart';
 import 'theme.dart';
 
 /// Maps data-space values to canvas pixels for a simple 2D Cartesian plot,
@@ -11,6 +12,11 @@ class Cartesian2DAxes {
   final double minX, maxX, minY, maxY;
   final ChartTheme theme;
 
+  /// Map x / y logarithmically. The axis range must then be positive;
+  /// values at or below zero are pinned to the axis minimum.
+  final bool logX;
+  final bool logY;
+
   Cartesian2DAxes({
     required this.plotArea,
     required this.minX,
@@ -18,30 +24,69 @@ class Cartesian2DAxes {
     required this.minY,
     required this.maxY,
     this.theme = ChartTheme.light,
+    this.logX = false,
+    this.logY = false,
   });
 
-  double toScreenX(double x) {
-    final t = maxX == minX ? 0.5 : (x - minX) / (maxX - minX);
-    return plotArea.left + t * plotArea.width;
+  static double _log10(double v) => math.log(v) / math.ln10;
+
+  /// Fraction 0–1 of the way from [lo] to [hi] (logarithmically if [log]).
+  static double _fraction(double v, double lo, double hi, bool log) {
+    if (hi == lo) return 0.5;
+    if (!log) return (v - lo) / (hi - lo);
+    final l = _log10(lo);
+    return ((v > 0 ? _log10(v) : l) - l) / (_log10(hi) - l);
   }
 
-  double toScreenY(double y) {
-    final t = maxY == minY ? 0.5 : (y - minY) / (maxY - minY);
-    // screen y grows downward, data y grows upward
-    return plotArea.bottom - t * plotArea.height;
+  static double _fromFraction(double t, double lo, double hi, bool log) {
+    if (!log) return lo + t * (hi - lo);
+    final l = _log10(lo);
+    return math.pow(10, l + t * (_log10(hi) - l)).toDouble();
   }
+
+  double toScreenX(double x) => plotArea.left + _fraction(x, minX, maxX, logX) * plotArea.width;
+
+  // screen y grows downward, data y grows upward
+  double toScreenY(double y) => plotArea.bottom - _fraction(y, minY, maxY, logY) * plotArea.height;
 
   /// Inverse of [toScreenX] — converts a canvas x-coordinate back to data
   /// space. Used to turn a drag-selection rectangle into a zoom window.
-  double toDataX(double screenX) {
-    final t = plotArea.width == 0 ? 0.0 : (screenX - plotArea.left) / plotArea.width;
-    return minX + t * (maxX - minX);
-  }
+  double toDataX(double screenX) =>
+      _fromFraction(plotArea.width == 0 ? 0.0 : (screenX - plotArea.left) / plotArea.width, minX, maxX, logX);
 
   /// Inverse of [toScreenY].
-  double toDataY(double screenY) {
-    final t = plotArea.height == 0 ? 0.0 : (plotArea.bottom - screenY) / plotArea.height;
-    return minY + t * (maxY - minY);
+  double toDataY(double screenY) =>
+      _fromFraction(plotArea.height == 0 ? 0.0 : (plotArea.bottom - screenY) / plotArea.height, minY, maxY, logY);
+
+  /// The y ticks for this axis: nice linear steps, or powers of ten (with
+  /// 2× and 5× steps over narrow ranges) on a log axis.
+  List<double> get yTicks => logY ? logTicks(minY, maxY) : niceTicks(minY, maxY);
+
+  /// The x ticks for this axis (see [yTicks]).
+  List<double> get xTicks => logX ? logTicks(minX, maxX) : niceTicks(minX, maxX);
+
+  /// Log-axis ticks within [min]..[max]: every power of ten, with 2× and 5×
+  /// steps when the range spans few decades, and only every n-th decade
+  /// when it spans very many.
+  static List<double> logTicks(double min, double max) {
+    if (min <= 0 || max <= min) return [if (min > 0) min];
+    final a = _log10(min).floor(), b = _log10(max).ceil();
+    final decades = b - a;
+    final multiples = decades <= 2 ? const [1, 2, 5] : const [1];
+    final every = decades > 8 ? (decades / 6).ceil() : 1;
+    return [
+      for (int e = a; e <= b; e += every)
+        for (final m in multiples)
+          if (m * math.pow(10, e) >= min * (1 - 1e-9) && m * math.pow(10, e) <= max * (1 + 1e-9))
+            double.parse((m * math.pow(10, e)).toStringAsPrecision(6)),
+    ];
+  }
+
+  /// Widens a positive range out to whole powers of ten, for log axes.
+  static (double, double) logExtent(double min, double max) {
+    if (min <= 0) min = max > 0 ? max / 10 : 1;
+    if (max <= min) max = min * 10;
+    return (math.pow(10, _log10(min).floor()).toDouble(), math.pow(10, _log10(max).ceil()).toDouble());
   }
 
   /// Standard padding reserved around the plot for axis titles + tick
@@ -76,14 +121,19 @@ class Cartesian2DAxes {
       ..color = theme.axisColor.withValues(alpha: 0.5)
       ..strokeWidth = 1;
 
-    // Y gridlines + ticks
-    for (final yv in yTicks) {
-      final y = toScreenY(yv);
+    // Y gridlines + ticks. If the widest label (e.g. "10000") won't fit the
+    // left margin, shrink the tick font rather than clip the labels.
+    final labels = [for (final yv in yTicks) yFormatter(yv)];
+    final room = plotArea.left - 8;
+    final widest = labels.fold(0.0, (w, t) => math.max(w, _layoutText(t, theme.tickTextColor, size: theme.tickFontSize).width));
+    final fontSize = widest > room && widest > 0 ? math.max(7.0, theme.tickFontSize * room / widest) : theme.tickFontSize;
+    for (int i = 0; i < yTicks.length; i++) {
+      final y = toScreenY(yTicks[i]);
       if (showGrid) {
         canvas.drawLine(Offset(plotArea.left, y), Offset(plotArea.right, y), gridPaint);
       }
       canvas.drawLine(Offset(plotArea.left - 4, y), Offset(plotArea.left, y), tickPaint);
-      final label = _layoutText(yFormatter(yv), theme.tickTextColor, size: theme.tickFontSize);
+      final label = _layoutText(labels[i], theme.tickTextColor, size: fontSize);
       label.paint(canvas, Offset(plotArea.left - 6 - label.width, y - label.height / 2));
     }
 
@@ -263,7 +313,7 @@ class Cartesian2DAxes {
   }
 
   TextPainter _layoutText(String text, Color color, {double size = 12}) {
-    return TextPainter(
+    return ChartTextPainter(
       text: TextSpan(
           text: text,
           style: TextStyle(color: color, fontSize: size, fontWeight: FontWeight.w600, fontFamily: theme.fontFamily)),

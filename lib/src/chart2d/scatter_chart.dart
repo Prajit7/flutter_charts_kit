@@ -12,6 +12,7 @@ import 'common.dart';
 import 'controller.dart';
 import 'reference.dart';
 import 'time_axis.dart';
+import 'crosshair_sync.dart';
 
 /// Transient interaction state for [ScatterChart2D] — hover, an
 /// in-progress drag-selection rectangle, and the current zoom window. Held
@@ -72,6 +73,11 @@ class ScatterChart2D extends StatefulWidget {
   /// calendar boundaries.
   final ChartAxisType xAxisType;
 
+  /// Linear (default) or logarithmic axes. Log axes show only positive
+  /// values — useful when data spans several orders of magnitude.
+  final ChartAxisScale xAxisScale;
+  final ChartAxisScale yAxisScale;
+
   /// Defaults to plain numbers, or dates/times on a time axis.
   final String Function(double value)? xTickFormatter;
   final String Function(double value) yTickFormatter;
@@ -87,11 +93,20 @@ class ScatterChart2D extends StatefulWidget {
   /// Shaded ranges drawn behind the points.
   final List<ChartReferenceBand> referenceBands;
 
+  /// Callouts pinned to data points.
+  final List<ChartAnnotation> annotations;
+
+  /// Print each point's [ChartPoint.label] beside it.
+  final bool showPointLabels;
+
   /// Replaces the default tooltip card.
   final ChartPointTooltipBuilder? tooltipBuilder;
 
   /// Reset zoom or export an image from outside the chart.
   final ChartController? controller;
+
+  /// Links this chart's crosshair with other charts sharing the same sync.
+  final ChartCrosshairSync? crosshairSync;
 
   final bool enableAnimation;
   final Duration animationDuration;
@@ -120,6 +135,8 @@ class ScatterChart2D extends StatefulWidget {
     this.yAxisTitle,
     this.emptyStateMessage = 'No data to display',
     this.xAxisType = ChartAxisType.numeric,
+    this.xAxisScale = ChartAxisScale.linear,
+    this.yAxisScale = ChartAxisScale.linear,
     this.xTickFormatter,
     this.yTickFormatter = Cartesian2DAxes.formatNumber,
     this.showGrid = true,
@@ -129,8 +146,11 @@ class ScatterChart2D extends StatefulWidget {
     this.defaultPointRadius = 5,
     this.referenceLines = const [],
     this.referenceBands = const [],
+    this.annotations = const [],
+    this.showPointLabels = false,
     this.tooltipBuilder,
     this.controller,
+    this.crosshairSync,
     this.enableAnimation = true,
     this.animationDuration = const Duration(milliseconds: 500),
     this.zoomMode = ChartZoomMode.xy,
@@ -189,6 +209,7 @@ class _ScatterChart2DState extends State<ScatterChart2D>
 
   @override
   void dispose() {
+    widget.crosshairSync?.clear(this);
     _controller.dispose();
     _hiddenNotifier.dispose();
     _interactionNotifier.dispose();
@@ -230,6 +251,7 @@ class _ScatterChart2DState extends State<ScatterChart2D>
                 onExit: (_) {
                   _interactionNotifier.value = _interactionNotifier.value.copyWith(clearHover: true);
                   widget.onPointHover?.call(null, null);
+                  widget.crosshairSync?.clear(this);
                 },
                 child: GestureDetector(
                   onTapUp: (d) => _handleTap(d.localPosition, size, visibleSeries),
@@ -254,12 +276,16 @@ class _ScatterChart2DState extends State<ScatterChart2D>
                                 xAxisTitle: widget.xAxisTitle,
                                 yAxisTitle: widget.yAxisTitle,
                                 xAxisType: widget.xAxisType,
+                                logX: _logX,
+                                logY: _logY,
                                 xTickFormatter: widget.xTickFormatter,
                                 yTickFormatter: widget.yTickFormatter,
                                 showGrid: widget.showGrid,
                                 defaultRadius: widget.defaultPointRadius,
                                 referenceLines: widget.referenceLines,
                                 referenceBands: widget.referenceBands,
+                                annotations: widget.annotations,
+                                showPointLabels: widget.showPointLabels,
                                 progress: _controller.value,
                                 zoom: interaction.zoom,
                               ),
@@ -284,6 +310,21 @@ class _ScatterChart2DState extends State<ScatterChart2D>
                           if (interaction.zoom != null)
                             Positioned(right: 8, top: 8, child: ChartResetZoomButton(theme: theme, onTap: resetZoom)),
                           if (interaction.hover != null) _buildTooltip(interaction.hover!, size, theme),
+                          if (widget.crosshairSync != null && interaction.hover == null)
+                            IgnorePointer(
+                              child: ListenableBuilder(
+                                listenable: widget.crosshairSync!,
+                                builder: (context, _) {
+                                  final x = widget.crosshairSync!.xFor(this);
+                                  if (x == null) return const SizedBox.shrink();
+                                  return CustomPaint(
+                                    size: size,
+                                    painter: SyncCrosshairPainter(
+                                        axes: _axesFor(size, visibleSeries, interaction.zoom), x: x, theme: theme),
+                                  );
+                                },
+                              ),
+                            ),
                         ],
                       );
                     },
@@ -338,15 +379,7 @@ class _ScatterChart2DState extends State<ScatterChart2D>
       return;
     }
 
-    final plotArea = Cartesian2DAxes.computePlotArea(size);
-    final bounds = _effectiveScatterBounds(visibleSeries, current.zoom);
-    final axes = Cartesian2DAxes(
-      plotArea: plotArea,
-      minX: bounds.minX,
-      maxX: bounds.maxX,
-      minY: bounds.minY,
-      maxY: bounds.maxY,
-    );
+    final axes = _axesFor(size, visibleSeries, current.zoom);
 
     final newMinX = axes.toDataX(rect.left);
     final newMaxX = axes.toDataX(rect.right);
@@ -381,23 +414,34 @@ class _ScatterChart2DState extends State<ScatterChart2D>
     final current = _interactionNotifier.value;
     final changed = hit?.series != current.hover?.series || hit?.point != current.hover?.point;
     _interactionNotifier.value = hit == null ? current.copyWith(clearHover: true) : current.copyWith(hover: hit);
+    final sync = widget.crosshairSync;
+    if (sync != null) hit == null ? sync.clear(this) : sync.update(this, hit.point.x);
     if (changed) {
       widget.onPointHover?.call(hit?.series, hit?.point);
     }
   }
 
+  bool get _logX => widget.xAxisScale == ChartAxisScale.logarithmic;
+  bool get _logY => widget.yAxisScale == ChartAxisScale.logarithmic;
+
+  Cartesian2DAxes _axesFor(Size size, List<XySeries> visible, ChartZoomWindow? zoom) {
+    final b = _effectiveScatterBounds(visible, zoom, logX: _logX, logY: _logY);
+    return Cartesian2DAxes(
+      plotArea: Cartesian2DAxes.computePlotArea(size),
+      minX: b.minX,
+      maxX: b.maxX,
+      minY: b.minY,
+      maxY: b.maxY,
+      logX: _logX,
+      logY: _logY,
+    );
+  }
+
   ({String series, ChartPoint point, Offset screenPos})? _hitTest(
       Offset pos, Size size, List<XySeries> visibleSeries) {
     if (visibleSeries.isEmpty) return null;
-    final plotArea = Cartesian2DAxes.computePlotArea(size);
-    final bounds = _effectiveScatterBounds(visibleSeries, _interactionNotifier.value.zoom);
-    final axes = Cartesian2DAxes(
-      plotArea: plotArea,
-      minX: bounds.minX,
-      maxX: bounds.maxX,
-      minY: bounds.minY,
-      maxY: bounds.maxY,
-    );
+    final axes = _axesFor(size, visibleSeries, _interactionNotifier.value.zoom);
+    final bounds = (minX: axes.minX, maxX: axes.maxX, minY: axes.minY, maxY: axes.maxY);
 
     // Pick the point whose edge is nearest the pointer (so big bubbles are
     // easy to hit), within a fixed slop.
@@ -446,10 +490,15 @@ class _ScatterChart2DState extends State<ScatterChart2D>
 /// Computes the data-space bounds to display: the current [zoom] window
 /// (if any), else the full extent of [series] padded 8% on each axis so
 /// points aren't clipped at the edges.
+///
+/// On a log axis ([logX]/[logY]) values ≤ 0 are ignored and the padding is
+/// a ratio rather than a difference.
 ({double minX, double maxX, double minY, double maxY}) _effectiveScatterBounds(
   List<XySeries> series,
-  ChartZoomWindow? zoom,
-) {
+  ChartZoomWindow? zoom, {
+  bool logX = false,
+  bool logY = false,
+}) {
   if (zoom != null && zoom.minY != null && zoom.maxY != null) {
     return (minX: zoom.minX, maxX: zoom.maxX, minY: zoom.minY!, maxY: zoom.maxY!);
   }
@@ -462,6 +511,7 @@ class _ScatterChart2DState extends State<ScatterChart2D>
     for (final p in s.data) {
       if (xMin != null && p.x < xMin) continue;
       if (xMax != null && p.x > xMax) continue;
+      if ((logX && p.x <= 0) || (logY && p.y <= 0)) continue;
       if (p.x < minX) minX = p.x;
       if (p.x > maxX) maxX = p.x;
       if (p.y < minY) minY = p.y;
@@ -469,19 +519,20 @@ class _ScatterChart2DState extends State<ScatterChart2D>
     }
   }
   if (minX.isInfinite) {
-    minX = xMin ?? 0;
-    maxX = xMax ?? 1;
-    minY = 0;
-    maxY = 1;
+    minX = xMin ?? (logX ? 1 : 0);
+    maxX = xMax ?? (logX ? 10 : 1);
+    minY = logY ? 1 : 0;
+    maxY = logY ? 10 : 1;
   }
-  final xPad = (maxX - minX) * 0.08;
-  final yPad = (maxY - minY) * 0.08;
-  return (
-    minX: xMin ?? (minX - xPad),
-    maxX: xMax ?? (maxX + xPad),
-    minY: minY - yPad,
-    maxY: maxY + yPad,
-  );
+  (double, double) pad(double lo, double hi, bool log) {
+    if (!log) return (lo - (hi - lo) * 0.08, hi + (hi - lo) * 0.08);
+    final f = hi == lo ? 2.0 : math.pow(hi / lo, 0.08).toDouble();
+    return (lo / f, hi * f);
+  }
+
+  final (x0, x1) = pad(minX, maxX, logX);
+  final (y0, y1) = pad(minY, maxY, logY);
+  return (minX: xMin ?? x0, maxX: xMax ?? x1, minY: y0, maxY: y1);
 }
 
 class _ScatterChartPainter extends CustomPainter {
@@ -490,12 +541,16 @@ class _ScatterChartPainter extends CustomPainter {
   final String? xAxisTitle;
   final String? yAxisTitle;
   final ChartAxisType xAxisType;
+  final bool logX;
+  final bool logY;
   final String Function(double)? xTickFormatter;
   final String Function(double) yTickFormatter;
   final bool showGrid;
   final double defaultRadius;
   final List<ChartReferenceLine> referenceLines;
   final List<ChartReferenceBand> referenceBands;
+  final List<ChartAnnotation> annotations;
+  final bool showPointLabels;
   final ChartZoomWindow? zoom;
 
   /// 0 (invisible) to 1 (full size) — drives the pop-in entrance animation.
@@ -507,12 +562,16 @@ class _ScatterChartPainter extends CustomPainter {
     required this.xAxisTitle,
     required this.yAxisTitle,
     required this.xAxisType,
+    required this.logX,
+    required this.logY,
     required this.xTickFormatter,
     required this.yTickFormatter,
     required this.showGrid,
     required this.defaultRadius,
     required this.referenceLines,
     required this.referenceBands,
+    required this.annotations,
+    required this.showPointLabels,
     required this.progress,
     required this.zoom,
   });
@@ -521,7 +580,7 @@ class _ScatterChartPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (series.isEmpty) return;
 
-    final bounds = _effectiveScatterBounds(series, zoom);
+    final bounds = _effectiveScatterBounds(series, zoom, logX: logX, logY: logY);
     final plotArea = Cartesian2DAxes.computePlotArea(size);
     final axes = Cartesian2DAxes(
       plotArea: plotArea,
@@ -530,8 +589,10 @@ class _ScatterChartPainter extends CustomPainter {
       minY: bounds.minY,
       maxY: bounds.maxY,
       theme: theme,
+      logX: logX,
+      logY: logY,
     );
-    final yTicks = Cartesian2DAxes.niceTicks(bounds.minY, bounds.maxY);
+    final yTicks = axes.yTicks;
 
     axes.drawGridAndAxes(
       canvas,
@@ -550,7 +611,7 @@ class _ScatterChartPainter extends CustomPainter {
     } else {
       final fmt = xTickFormatter ?? Cartesian2DAxes.formatNumber;
       axes.drawXTicks(canvas, [
-        for (final xv in Cartesian2DAxes.niceTicks(bounds.minX, bounds.maxX)) (axes.toScreenX(xv), fmt(xv)),
+        for (final xv in axes.xTicks) (axes.toScreenX(xv), fmt(xv)),
       ]);
     }
 
@@ -588,7 +649,22 @@ class _ScatterChartPainter extends CustomPainter {
     }
     canvas.restore();
 
+    if (showPointLabels && progress >= 1) {
+      for (final s in series) {
+        for (final p in s.data) {
+          if (p.label == null || p.x < bounds.minX || p.x > bounds.maxX || p.y < bounds.minY || p.y > bounds.maxY) continue;
+          final r = p.size ?? defaultRadius;
+          final size = axes.measureLabel(p.label!);
+          axes.drawLabel(canvas, p.label!, Offset(axes.toScreenX(p.x) + r + 3, axes.toScreenY(p.y) - size.height / 2));
+        }
+      }
+    }
+
     references.paintLines(canvas, referenceLines);
+    paintAnnotations(canvas, annotations, (a) {
+      if (a.x < bounds.minX || a.x > bounds.maxX || a.y < bounds.minY || a.y > bounds.maxY) return null;
+      return Offset(axes.toScreenX(a.x), axes.toScreenY(a.y));
+    }, plotArea, theme);
   }
 
   /// Hover rebuilds this painter with identical inputs; only real changes
@@ -602,12 +678,16 @@ class _ScatterChartPainter extends CustomPainter {
       old.showGrid != showGrid ||
       old.defaultRadius != defaultRadius ||
       old.xAxisType != xAxisType ||
+      old.logX != logX ||
+      old.logY != logY ||
       old.xAxisTitle != xAxisTitle ||
       old.yAxisTitle != yAxisTitle ||
       old.xTickFormatter != xTickFormatter ||
       old.yTickFormatter != yTickFormatter ||
       !identical(old.referenceLines, referenceLines) ||
-      !identical(old.referenceBands, referenceBands);
+      !identical(old.referenceBands, referenceBands) ||
+      !identical(old.annotations, annotations) ||
+      old.showPointLabels != showPointLabels;
 }
 
 /// The hovered point's highlight and crosshair, painted above the data layer.

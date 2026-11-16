@@ -13,6 +13,7 @@ import 'reference.dart';
 import 'time_axis.dart';
 import 'curves.dart';
 import 'downsample.dart';
+import 'crosshair_sync.dart';
 
 typedef _LineHover = ({String series, ChartPoint point, Offset screenPos});
 
@@ -96,6 +97,14 @@ class LineChart2D extends StatefulWidget {
   /// Tooltips and callbacks still report each point's own y.
   final bool stacked;
 
+  /// Stack series as shares of 100% at each x (implies [stacked]): the
+  /// y-axis runs 0–100% and tooltips show each point's value and share.
+  final bool percentStacked;
+
+  /// Linear (default) or logarithmic y-axis. A log axis shows only positive
+  /// values, and doesn't combine meaningfully with stacking.
+  final ChartAxisScale yAxisScale;
+
   final bool showGrid;
   final bool showLegend;
   final ChartLegendPosition legendPosition;
@@ -109,6 +118,16 @@ class LineChart2D extends StatefulWidget {
 
   /// Shaded ranges drawn behind the data.
   final List<ChartReferenceBand> referenceBands;
+
+  /// Callouts pinned to data points.
+  final List<ChartAnnotation> annotations;
+
+  /// Print each point's value above it (skipped where labels would overlap,
+  /// and on downsampled series).
+  final bool showValueLabels;
+
+  /// Formats [showValueLabels] text; defaults to [yTickFormatter].
+  final String Function(double value)? valueLabelFormatter;
 
   final bool enableAnimation;
   final Duration animationDuration;
@@ -143,6 +162,9 @@ class LineChart2D extends StatefulWidget {
   /// Reset zoom or export an image from outside the chart.
   final ChartController? controller;
 
+  /// Links this chart's crosshair with other charts sharing the same sync.
+  final ChartCrosshairSync? crosshairSync;
+
   /// Fired continuously as the pointer moves over/off a point (both mouse
   /// hover and touch). Called with `(null, null)` when nothing is hovered.
   final ChartPointCallback? onPointHover;
@@ -164,6 +186,8 @@ class LineChart2D extends StatefulWidget {
     this.curve = LineChartCurve.straight,
     this.filled = false,
     this.stacked = false,
+    this.percentStacked = false,
+    this.yAxisScale = ChartAxisScale.linear,
     this.showGrid = true,
     this.showLegend = true,
     this.legendPosition = ChartLegendPosition.bottom,
@@ -173,6 +197,9 @@ class LineChart2D extends StatefulWidget {
     this.pointRadius = 3.5,
     this.referenceLines = const [],
     this.referenceBands = const [],
+    this.annotations = const [],
+    this.showValueLabels = false,
+    this.valueLabelFormatter,
     this.enableAnimation = true,
     this.animationDuration = const Duration(milliseconds: 650),
     this.updateAnimation = ChartUpdateAnimation.morph,
@@ -182,6 +209,7 @@ class LineChart2D extends StatefulWidget {
     this.zoomDragThreshold = 12,
     this.tooltipBuilder,
     this.controller,
+    this.crosshairSync,
     this.onPointHover,
     this.onPointTap,
   });
@@ -203,8 +231,9 @@ class _PlotSeries {
 }
 
 /// Sorts each series by x and, when [stacked], replaces y with running
-/// totals across series.
-List<_PlotSeries> _toPlotSeries(List<XySeries> series, bool stacked) {
+/// totals across series — as percentages of the total at each x when
+/// [percent].
+List<_PlotSeries> _toPlotSeries(List<XySeries> series, bool stacked, {bool percent = false}) {
   final sorted = [for (final s in series) [...s.data]..sort((a, b) => a.x.compareTo(b.x))];
   if (!stacked) {
     return [
@@ -220,12 +249,23 @@ List<_PlotSeries> _toPlotSeries(List<XySeries> series, bool stacked) {
         base[k] += contribution[k];
       }
     }
-    result.add(_PlotSeries(
-      series[i],
-      sorted[i],
-      [for (int k = 0; k < sorted[i].length; k++) base[k] + sorted[i][k].y],
-      base,
-    ));
+    var top = [for (int k = 0; k < sorted[i].length; k++) base[k] + sorted[i][k].y];
+    if (percent) {
+      // Everything stacked at these x positions, this series included.
+      final total = [...top];
+      for (int j = i + 1; j < series.length; j++) {
+        final above = _interpolateSorted(sorted[j], [for (final p in sorted[i]) p.x]);
+        for (int k = 0; k < total.length; k++) {
+          total[k] += above[k];
+        }
+      }
+      double share(double v, double t) => t == 0 ? 0 : v / t * 100;
+      top = [for (int k = 0; k < top.length; k++) share(top[k], total[k])];
+      for (int k = 0; k < base.length; k++) {
+        base[k] = share(base[k], total[k]);
+      }
+    }
+    result.add(_PlotSeries(series[i], sorted[i], top, base));
   }
   return result;
 }
@@ -305,7 +345,9 @@ class _LineChart2DState extends State<LineChart2D>
   @override
   void didUpdateWidget(covariant LineChart2D oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!listEquals(oldWidget.series, widget.series) || oldWidget.stacked != widget.stacked) {
+    if (!listEquals(oldWidget.series, widget.series) ||
+        oldWidget.stacked != widget.stacked ||
+        oldWidget.percentStacked != widget.percentStacked) {
       switch (widget.updateAnimation) {
         case ChartUpdateAnimation.replay:
           if (widget.enableAnimation) _controller.forward(from: 0);
@@ -324,6 +366,7 @@ class _LineChart2DState extends State<LineChart2D>
 
   @override
   void dispose() {
+    widget.crosshairSync?.clear(this);
     _controller.dispose();
     _morph.dispose();
     _hiddenNotifier.dispose();
@@ -362,7 +405,9 @@ class _LineChart2DState extends State<LineChart2D>
       plot: ValueListenableBuilder<Set<String>>(
         valueListenable: _hiddenNotifier,
         builder: (context, hidden, _) {
-          final visible = _toPlotSeries(widget.series.where((s) => !hidden.contains(s.name)).toList(), widget.stacked);
+          final visible = _toPlotSeries(widget.series.where((s) => !hidden.contains(s.name)).toList(),
+              widget.stacked || widget.percentStacked,
+              percent: widget.percentStacked);
           _lastPlotted = visible;
           return LayoutBuilder(
             builder: (context, constraints) {
@@ -375,6 +420,7 @@ class _LineChart2DState extends State<LineChart2D>
                 onExit: (_) {
                   _interactionNotifier.value = _interactionNotifier.value.copyWith(clearHover: true);
                   widget.onPointHover?.call(null, null);
+                  widget.crosshairSync?.clear(this);
                 },
                 child: GestureDetector(
                   onTapUp: (d) => _handleTap(d.localPosition, size, visible),
@@ -403,13 +449,19 @@ class _LineChart2DState extends State<LineChart2D>
                                 yTickFormatter: widget.yTickFormatter,
                                 curve: widget.curve,
                                 filled: widget.filled,
-                                stacked: widget.stacked,
+                                stacked: widget.stacked || widget.percentStacked,
+                                percent: widget.percentStacked,
+                                logY: _logY,
                                 showGrid: widget.showGrid,
                                 showPoints: widget.showPoints,
                                 lineWidth: widget.lineWidth,
                                 pointRadius: widget.pointRadius,
                                 referenceLines: widget.referenceLines,
                                 referenceBands: widget.referenceBands,
+                                annotations: widget.annotations,
+                                valueLabelFormatter: widget.showValueLabels
+                                    ? (widget.valueLabelFormatter ?? widget.yTickFormatter)
+                                    : null,
                                 progress: _controller.value,
                                 zoom: interaction.zoom,
                                 liveWindow: widget.liveWindow,
@@ -438,6 +490,8 @@ class _LineChart2DState extends State<LineChart2D>
                           if (interaction.zoom != null)
                             Positioned(right: 8, top: 8, child: ChartResetZoomButton(theme: theme, onTap: resetZoom)),
                           if (interaction.hover != null) _buildTooltip(interaction.hover!, size, theme),
+                          if (widget.crosshairSync != null && interaction.hover == null)
+                            _syncedCrosshair(size, visible, interaction.zoom, theme),
                         ],
                       );
                     },
@@ -446,6 +500,38 @@ class _LineChart2DState extends State<LineChart2D>
               );
             },
           );
+        },
+      ),
+    );
+  }
+
+  /// Another chart's crosshair, mirrored here with the nearest point of each
+  /// series marked.
+  Widget _syncedCrosshair(Size size, List<_PlotSeries> visible, ChartZoomWindow? zoom, ChartTheme theme) {
+    final sync = widget.crosshairSync!;
+    return IgnorePointer(
+      child: ListenableBuilder(
+        listenable: sync,
+        builder: (context, _) {
+          final x = sync.xFor(this);
+          if (x == null) return const SizedBox.shrink();
+          final axes = _axesFor(size, visible, zoom);
+          final dots = <(Offset, Color)>[];
+          for (final s in visible) {
+            int best = -1;
+            double bestDist = double.infinity;
+            for (int i = 0; i < s.points.length; i++) {
+              final d = (s.points[i].x - x).abs();
+              if (d < bestDist) {
+                bestDist = d;
+                best = i;
+              }
+            }
+            if (best < 0) continue;
+            final p = Offset(axes.toScreenX(s.points[best].x), axes.toScreenY(s.plotY[best]));
+            if (axes.plotArea.inflate(1).contains(p)) dots.add((p, s.source.color));
+          }
+          return CustomPaint(size: size, painter: SyncCrosshairPainter(axes: axes, x: x, theme: theme, dots: dots));
         },
       ),
     );
@@ -497,15 +583,30 @@ class _LineChart2DState extends State<LineChart2D>
     _interactionNotifier.value = current.copyWith(zoom: newZoom, clearDragRect: true);
   }
 
+  bool get _logY => widget.yAxisScale == ChartAxisScale.logarithmic;
+
   Cartesian2DAxes _axesFor(Size size, List<_PlotSeries> visible, ChartZoomWindow? zoom) {
-    final bounds = _effectiveBounds(visible, zoom, liveWindow: widget.liveWindow);
+    final bounds = _effectiveBounds(visible, zoom, liveWindow: widget.liveWindow, logY: _logY, percent: widget.percentStacked);
     return Cartesian2DAxes(
       plotArea: Cartesian2DAxes.computePlotArea(size),
       minX: bounds.minX,
       maxX: bounds.maxX,
       minY: bounds.minY,
       maxY: bounds.maxY,
+      logY: _logY,
     );
+  }
+
+  /// "12 (34.5%)" for a point of a percent-stacked series.
+  String _valueText(String series, ChartPoint point) {
+    final text = widget.yTickFormatter(point.y);
+    if (!widget.percentStacked) return text;
+    for (final s in _lastPlotted) {
+      if (s.source.name != series) continue;
+      final i = s.points.indexOf(point);
+      if (i >= 0 && s.baseY != null) return '$text (${(s.plotY[i] - s.baseY![i]).toStringAsFixed(1)}%)';
+    }
+    return text;
   }
 
   // ---------------- hover / tap handling ----------------
@@ -521,6 +622,8 @@ class _LineChart2DState extends State<LineChart2D>
     final changed = hit?.series != current.hover?.series || hit?.point != current.hover?.point;
     _interactionNotifier.value = hit == null ? current.copyWith(clearHover: true) : current.copyWith(hover: hit);
     if (changed) widget.onPointHover?.call(hit?.series, hit?.point);
+    final sync = widget.crosshairSync;
+    if (sync != null) hit == null ? sync.clear(this) : sync.update(this, hit.point.x);
   }
 
   _LineHover? _hitTest(Offset pos, Size size, List<_PlotSeries> visible) {
@@ -557,7 +660,7 @@ class _LineChart2DState extends State<LineChart2D>
               width: 150,
               title: hover.series,
               subtitle: hover.point.label ?? _formatX(hover.point.x),
-              value: widget.yTickFormatter(hover.point.y),
+              value: _valueText(hover.series, hover.point),
             ),
     );
   }
@@ -570,10 +673,15 @@ class _LineChart2DState extends State<LineChart2D>
 ///
 /// With a [liveWindow] and no zoom, shows the last [liveWindow] x-units of
 /// data, fitted like an x-zoom.
+///
+/// [logY] ignores values ≤ 0 and rounds out to powers of ten; [percent]
+/// pins the unzoomed y-range to 0–100.
 ({double minX, double maxX, double minY, double maxY}) _effectiveBounds(
   List<_PlotSeries> series,
   ChartZoomWindow? zoom, {
   double? liveWindow,
+  bool logY = false,
+  bool percent = false,
 }) {
   if (zoom == null && liveWindow != null) {
     double latest = -double.infinity;
@@ -598,19 +706,31 @@ class _LineChart2DState extends State<LineChart2D>
       final y = s.plotY[i];
       if (x < minX) minX = x;
       if (x > maxX) maxX = x;
+      if (logY && y <= 0) continue; // can't be shown on a log axis
       if (y < minY) minY = y;
       if (y > maxY) maxY = y;
       // a stacked area's floor must stay in view too
       final base = s.baseY?[i];
-      if (base != null && base < minY) minY = base;
+      if (base != null && base < minY && !(logY && base <= 0)) minY = base;
     }
   }
-  if (minX.isInfinite) {
+  if (minX.isInfinite || minY.isInfinite) {
     // nothing fell inside the zoom window — fall back to the window itself
-    minX = xMin ?? 0;
-    maxX = xMax ?? 1;
-    minY = 0;
-    maxY = 1;
+    if (minX.isInfinite) {
+      minX = xMin ?? 0;
+      maxX = xMax ?? 1;
+    }
+    minY = logY ? 1 : 0;
+    maxY = logY ? 10 : 1;
+  } else if (zoom == null && percent) {
+    (minY, maxY) = (0, 100);
+  } else if (zoom == null && logY) {
+    (minY, maxY) = Cartesian2DAxes.logExtent(minY, maxY);
+  } else if (zoom != null && logY) {
+    // Pad by a ratio, not a difference, so the padding looks even.
+    final f = maxY == minY ? 2.0 : math.pow(maxY / minY, 0.1).toDouble();
+    minY /= f;
+    maxY *= f;
   } else if (zoom == null) {
     // Only anchor at zero for the default, unzoomed view, and round out to
     // nice tick values so the top gridline sits on the plot's edge.
@@ -641,12 +761,16 @@ class _LineChartPainter extends CustomPainter {
   final LineChartCurve curve;
   final bool filled;
   final bool stacked;
+  final bool percent;
+  final bool logY;
   final bool showGrid;
   final bool showPoints;
   final double lineWidth;
   final double pointRadius;
   final List<ChartReferenceLine> referenceLines;
   final List<ChartReferenceBand> referenceBands;
+  final List<ChartAnnotation> annotations;
+  final String Function(double)? valueLabelFormatter;
   final ChartZoomWindow? zoom;
   final double? liveWindow;
   final bool downsample;
@@ -670,12 +794,16 @@ class _LineChartPainter extends CustomPainter {
     required this.curve,
     required this.filled,
     required this.stacked,
+    required this.percent,
+    required this.logY,
     required this.showGrid,
     required this.showPoints,
     required this.lineWidth,
     required this.pointRadius,
     required this.referenceLines,
     required this.referenceBands,
+    required this.annotations,
+    required this.valueLabelFormatter,
     required this.progress,
     required this.zoom,
     required this.liveWindow,
@@ -690,10 +818,10 @@ class _LineChartPainter extends CustomPainter {
 
     final from = morphFrom;
     final plotted = from == null ? series : _lerpSeries(from, series, morphT);
-    var bounds = _effectiveBounds(series, zoom, liveWindow: liveWindow);
+    var bounds = _effectiveBounds(series, zoom, liveWindow: liveWindow, logY: logY, percent: percent);
     if (from != null && from.isNotEmpty) {
       // Glide the axes too, so values don't jump against a snapping scale.
-      final a = _effectiveBounds(from, zoom, liveWindow: liveWindow);
+      final a = _effectiveBounds(from, zoom, liveWindow: liveWindow, logY: logY, percent: percent);
       double lerp(double x, double y) => x + (y - x) * morphT;
       bounds = (minX: bounds.minX, maxX: bounds.maxX, minY: lerp(a.minY, bounds.minY), maxY: lerp(a.maxY, bounds.maxY));
     }
@@ -705,12 +833,13 @@ class _LineChartPainter extends CustomPainter {
       minY: bounds.minY,
       maxY: bounds.maxY,
       theme: theme,
+      logY: logY,
     );
 
     axes.drawGridAndAxes(
       canvas,
-      yTicks: Cartesian2DAxes.niceTicks(bounds.minY, bounds.maxY),
-      yFormatter: yTickFormatter,
+      yTicks: axes.yTicks,
+      yFormatter: percent ? (v) => '${Cartesian2DAxes.formatNumber(v)}%' : yTickFormatter,
       xAxisTitle: xAxisTitle,
       yAxisTitle: yAxisTitle,
       showGrid: showGrid,
@@ -737,6 +866,7 @@ class _LineChartPainter extends CustomPainter {
 
     final zeroY = axes.toScreenY(0.0.clamp(bounds.minY, bounds.maxY));
     final maxPoints = math.max(3, (plotArea.width * 1.5).round());
+    final labelJobs = <(_PlotSeries, List<int>, List<Offset>)>[];
     for (final s in plotted) {
       var idx = visibleIndices(s);
       if (idx.isEmpty) continue;
@@ -783,10 +913,31 @@ class _LineChartPainter extends CustomPainter {
           canvas.drawCircle(sp, pointRadius, dot);
         }
       }
+      if (valueLabelFormatter != null && !thinned) labelJobs.add((s, idx, pts));
     }
     canvas.restore();
 
+    // Value labels, after the reveal clip so top-edge labels aren't cut;
+    // a label overlapping the previous one in its series is skipped.
+    if (progress >= 1) {
+      for (final (s, idx, pts) in labelJobs) {
+        double lastRight = -double.infinity;
+        for (int k = 0; k < idx.length; k++) {
+          final text = valueLabelFormatter!(s.points[idx[k]].y);
+          final size = axes.measureLabel(text);
+          final left = pts[k].dx - size.width / 2;
+          if (left < lastRight + 4) continue;
+          axes.drawLabel(canvas, text, Offset(left, pts[k].dy - pointRadius - 3 - size.height), color: s.source.color);
+          lastRight = left + size.width;
+        }
+      }
+    }
+
     references.paintLines(canvas, referenceLines);
+    paintAnnotations(canvas, annotations, (a) {
+      if (a.x < bounds.minX || a.x > bounds.maxX) return null;
+      return Offset(axes.toScreenX(a.x), axes.toScreenY(a.y));
+    }, plotArea, theme);
   }
 
   /// x ticks: point labels if the data carries them (e.g. pre-formatted
@@ -829,6 +980,8 @@ class _LineChartPainter extends CustomPainter {
       old.curve != curve ||
       old.filled != filled ||
       old.stacked != stacked ||
+      old.percent != percent ||
+      old.logY != logY ||
       old.showGrid != showGrid ||
       old.showPoints != showPoints ||
       old.lineWidth != lineWidth ||
@@ -839,7 +992,9 @@ class _LineChartPainter extends CustomPainter {
       old.xTickFormatter != xTickFormatter ||
       old.yTickFormatter != yTickFormatter ||
       !identical(old.referenceLines, referenceLines) ||
-      !identical(old.referenceBands, referenceBands);
+      !identical(old.referenceBands, referenceBands) ||
+      !identical(old.annotations, annotations) ||
+      old.valueLabelFormatter != valueLabelFormatter;
 }
 
 /// The hovered point's highlight and crosshair, painted above the data layer.

@@ -1,6 +1,6 @@
 name: flutter_charts_kit
-description: Interactive 2D and 3D charts for Flutter with zero dependencies — line, bar, combo, pie, scatter, heatmap, candlestick, radar, gauge, treemap, Sankey, 3D surface/bars/scatter and more.
-version: 0.1.0
+description: Interactive 2D and 3D charts for Flutter.
+version: 0.2.0
 homepage: https://github.com/prajit7/flutter_charts_kit
 repository: https://github.com/prajit7/flutter_charts_kit
 issue_tracker: https://github.com/prajit7/flutter_charts_kit/issues
@@ -18,6 +18,12 @@ screenshots:
     path: example/assets/2d.png
   - description: 3D surface, wireframe with contours, 3D bars and 3D scatter.
     path: example/assets/3d.png
+  - description: Waterfall, bullet, calendar heatmap, sunburst, rose, radial bars, range, dumbbell and Gantt charts.
+    path: example/assets/business.png
+  - description: Option payoff, open interest, market depth, volatility smile, Heikin-Ashi with volume profile and drawings, Renko.
+    path: example/assets/options.png
+  - description: World choropleth map, network graph, chord diagram and parallel coordinates.
+    path: example/assets/graphs_maps.png
   - description: Heatmap, candlestick, radar, histogram, box plot, gauges, funnel, treemap and Sankey.
     path: example/assets/more.png
 

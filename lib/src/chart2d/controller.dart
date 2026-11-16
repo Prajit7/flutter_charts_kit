@@ -5,6 +5,8 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
+import 'svg_export.dart';
+
 /// Drives a 2D chart from outside — reset its zoom from your own toolbar, or
 /// export what it currently shows as a PNG.
 ///
@@ -64,6 +66,18 @@ class ChartController extends ChangeNotifier {
     final boundary = _boundaryKey?.currentContext?.findRenderObject();
     if (boundary is! RenderRepaintBoundary) return null;
     return boundary.toImage(pixelRatio: pixelRatio);
+  }
+
+  /// The attached chart (title, plot and legend) as an SVG document —
+  /// vector output that stays sharp at any size, for reports and print.
+  ///
+  /// Shapes, text, clipping and backgrounds are exported; gradients and
+  /// images are not, and curves are approximated by fine polylines.
+  /// Returns null if no chart is attached or it hasn't been laid out yet.
+  String? toSvg({Color? background}) {
+    final boundary = _boundaryKey?.currentContext?.findRenderObject();
+    if (boundary is! RenderRepaintBoundary || !boundary.hasSize) return null;
+    return renderTreeToSvg(boundary, boundary.size, background: background);
   }
 
   /// Same as [toImage], encoded as PNG bytes — ready to save or share.

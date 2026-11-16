@@ -10,6 +10,7 @@ import 'common.dart';
 import 'controller.dart';
 import 'reference.dart';
 import 'curves.dart';
+import 'crosshair_sync.dart';
 
 /// How a [ComboSeries] is drawn.
 enum ComboSeriesType { bar, line }
@@ -111,6 +112,9 @@ class ComboChart2D extends StatefulWidget {
   /// Primary-axis shaded ranges, drawn behind the data.
   final List<ChartReferenceBand> referenceBands;
 
+  /// Callouts: `x` is the category index, `y` a primary-axis value.
+  final List<ChartAnnotation> annotations;
+
   final bool enableAnimation;
   final Duration animationDuration;
 
@@ -119,6 +123,10 @@ class ComboChart2D extends StatefulWidget {
 
   /// Export an image from outside the chart (this chart has no zoom).
   final ChartController? controller;
+
+  /// Links this chart's crosshair with other charts sharing the same sync
+  /// (the shared x is the category index).
+  final ChartCrosshairSync? crosshairSync;
 
   /// Fired once per tap on a category, with its index into [categories].
   final void Function(String category, int index)? onCategoryTap;
@@ -143,10 +151,12 @@ class ComboChart2D extends StatefulWidget {
     this.legendPosition = ChartLegendPosition.bottom,
     this.referenceLines = const [],
     this.referenceBands = const [],
+    this.annotations = const [],
     this.enableAnimation = true,
     this.animationDuration = const Duration(milliseconds: 600),
     this.tooltipBuilder,
     this.controller,
+    this.crosshairSync,
     this.onCategoryTap,
   });
 
@@ -301,6 +311,7 @@ class _ComboChart2DState extends State<ComboChart2D>
 
   @override
   void dispose() {
+    widget.crosshairSync?.clear(this);
     _controller.dispose();
     _hiddenNotifier.dispose();
     _hoverNotifier.dispose();
@@ -339,15 +350,23 @@ class _ComboChart2DState extends State<ComboChart2D>
                 reserveSecondary: _hasSecondary);
             return MouseRegion(
               onHover: (e) => _setHover(layout, e.localPosition),
-              onExit: (_) => _hoverNotifier.value = null,
+              onExit: (_) {
+                _hoverNotifier.value = null;
+                widget.crosshairSync?.clear(this);
+              },
               child: GestureDetector(
                 onTapUp: (d) {
                   final slot = _setHover(layout, d.localPosition);
                   if (slot != null) widget.onCategoryTap?.call(widget.categories[slot], slot);
                 },
-                child: ValueListenableBuilder<(int, Offset)?>(
-                  valueListenable: _hoverNotifier,
-                  builder: (context, hover, _) => Stack(
+                child: ListenableBuilder(
+                  listenable: Listenable.merge([_hoverNotifier, if (widget.crosshairSync != null) widget.crosshairSync!]),
+                  builder: (context, _) {
+                    final hover = _hoverNotifier.value;
+                    // Another chart's hovered category, highlighted here too.
+                    final synced = widget.crosshairSync?.xFor(this)?.round();
+                    final syncedSlot = synced != null && synced >= 0 && synced < widget.categories.length ? synced : null;
+                    return Stack(
                     children: [
                       AnimatedBuilder(
                         animation: _controller,
@@ -366,14 +385,16 @@ class _ComboChart2DState extends State<ComboChart2D>
                             showGrid: widget.showGrid,
                             referenceLines: widget.referenceLines,
                             referenceBands: widget.referenceBands,
-                            hoveredSlot: hover?.$1,
+                            annotations: widget.annotations,
+                            hoveredSlot: hover?.$1 ?? syncedSlot,
                             progress: _controller.value,
                           ),
                         ),
                       ),
                       if (hover != null) _buildTooltip(hover, size, visible, theme),
                     ],
-                  ),
+                  );
+                  },
                 ),
               ),
             );
@@ -386,6 +407,8 @@ class _ComboChart2DState extends State<ComboChart2D>
   int? _setHover(_ComboLayout layout, Offset pos) {
     final slot = layout.slotAt(pos);
     _hoverNotifier.value = slot == null ? null : (slot, pos);
+    final sync = widget.crosshairSync;
+    if (sync != null) slot == null ? sync.clear(this) : sync.update(this, slot.toDouble());
     return slot;
   }
 
@@ -477,6 +500,7 @@ class _ComboChartPainter extends CustomPainter {
   final bool showGrid;
   final List<ChartReferenceLine> referenceLines;
   final List<ChartReferenceBand> referenceBands;
+  final List<ChartAnnotation> annotations;
   final int? hoveredSlot;
   final double progress;
 
@@ -493,6 +517,7 @@ class _ComboChartPainter extends CustomPainter {
     required this.showGrid,
     required this.referenceLines,
     required this.referenceBands,
+    required this.annotations,
     required this.hoveredSlot,
     required this.progress,
   });
@@ -566,6 +591,11 @@ class _ComboChartPainter extends CustomPainter {
     canvas.restore();
 
     references.paintLines(canvas, referenceLines);
+    paintAnnotations(canvas, annotations, (a) {
+      final i = a.x.round();
+      if (i < 0 || i >= layout.categories.length) return null;
+      return Offset(layout.slotCenter(i), primary.toScreenY(a.y));
+    }, plot, theme);
   }
 
   @override

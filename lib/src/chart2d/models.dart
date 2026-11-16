@@ -95,6 +95,15 @@ enum ChartUpdateAnimation {
   none,
 }
 
+/// Linear or logarithmic value axis.
+enum ChartAxisScale {
+  linear,
+
+  /// Each power of ten gets equal space — for data spanning several orders
+  /// of magnitude. Only positive values can be shown.
+  logarithmic,
+}
+
 /// How a chart interprets [ChartPoint.x].
 enum ChartAxisType {
   /// Plain numbers.

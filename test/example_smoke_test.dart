@@ -53,6 +53,36 @@ void main() {
         final error = tester.takeException();
         if (error != null) fail('more charts, scroll step $i: $error');
       }
+
+      // "Business" tab.
+      await tester.tap(find.byIcon(Icons.business_center_outlined));
+      await _settle(tester);
+      for (int i = 0; i < 30; i++) {
+        await tester.drag(find.byType(ListView).last, const Offset(0, -400));
+        await _settle(tester);
+        final error = tester.takeException();
+        if (error != null) fail('business charts, scroll step $i: $error');
+      }
+
+      // "Graphs & maps" tab (network graph animates, so pump a bounded time).
+      await tester.tap(find.byIcon(Icons.hub_outlined));
+      await _settle(tester);
+      for (int i = 0; i < 12; i++) {
+        await tester.drag(find.byType(ListView).last, const Offset(0, -300));
+        await _settle(tester);
+        final error = tester.takeException();
+        if (error != null) fail('graphs & maps, scroll step $i: $error');
+      }
+
+      // "Options & trading" tab (the depth demo ticks on a timer).
+      await tester.tap(find.byIcon(Icons.candlestick_chart_outlined));
+      await _settle(tester);
+      for (int i = 0; i < 10; i++) {
+        await tester.drag(find.byType(ListView).last, const Offset(0, -300));
+        await _settle(tester);
+        final error = tester.takeException();
+        if (error != null) fail('options & trading, scroll step $i: $error');
+      }
     });
   }
 }

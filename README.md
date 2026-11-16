@@ -29,6 +29,15 @@
   <img src="example/assets/3d.png" alt="3D surface, wireframe with contours, 3D bars, 3D scatter" width="49%">
   <img src="example/assets/more.png" alt="Heatmap, candlestick, radar, histogram, box plot, gauges, funnel, treemap, Sankey" width="49%">
 </p>
+<p align="center">
+  <img src="example/assets/business.png" alt="Waterfall, bullet, calendar heatmap, sunburst, rose, radial bars, range, dumbbell and Gantt charts" width="100%">
+</p>
+<p align="center">
+  <img src="example/assets/options.png" alt="Option payoff, open interest by strike, market depth, volatility smile, Heikin-Ashi with volume profile and drawings, Renko" width="100%">
+</p>
+<p align="center">
+  <img src="example/assets/graphs_maps.png" alt="World choropleth map, force-directed network graph, chord diagram and parallel coordinates" width="100%">
+</p>
 
 ## Features
 
@@ -41,14 +50,18 @@
 | 🍩 **Pie & donut** | Hover highlight, percentage labels, pinch zoom & pan |
 | ⚬ **Scatter & bubble** | Per-point size, XY drag-to-zoom |
 | 🟩 **Heatmap** | Row × column grid, gradient color scale, missing values, cell labels |
-| 🕯️ **Trading chart** | Candles/OHLC, volume, live last-price tag, SMA/EMA, Bollinger, VWAP, RSI, MACD, gap-free time axis, dark by default |
+| 🕯️ **Trading chart** | Candles/OHLC, Heikin-Ashi, Renko, line break, volume and volume profile, live last-price tag, SMA/EMA, Bollinger, VWAP, RSI, MACD, drawing tools (trendlines, levels, Fibonacci), dark by default |
+| 🎯 **Options** | Strategy payoff (expiry + today curves, breakevens, max profit/loss), open interest by strike with max pain and PCR, market depth, volatility smile; Black-Scholes, Greeks and implied volatility in pure Dart |
 | 🕸️ **Radar** | Multi-series spider chart with polygon or circular grid |
 | ⏱️ **Gauge** | Arc or needle, colored ranges, animates between values |
 | 📶 **Histogram & box plot** | Automatic nice binning; quartiles, whiskers and outliers |
 | 🔻 **Funnel, treemap, Sankey** | Conversion steps, nested squarified tiles, flows between stages |
 | ✏️ **Sparkline** | Tiny inline line/bar trend for lists and KPI cards |
+| 💼 **Business charts** | Waterfall, bullet, calendar heatmap, sunburst (drill-down), rose & radial bars, range/dumbbell/error-bar/band, lollipop, Gantt |
+| 🕸️ **Graphs & maps** | Force-directed network graph, chord diagram, parallel coordinates with brushing, choropleth maps from your own GeoJSON |
 | 📏 **Annotations** | Reference lines and shaded bands (targets, thresholds, date ranges) |
-| 🎛️ **Control** | `ChartController` to reset zoom or export a PNG, custom tooltip builders, legend on any side |
+| 🎛️ **Control** | `ChartController` to reset zoom or export PNG/SVG, linked crosshairs across charts, custom tooltips, legend on any side |
+| 🔢 **Scales & labels** | Log axes, 100% stacked bars and areas, value labels, annotations pinned to data points |
 | 🎨 **Theming** | `ChartThemeScope` with light/dark presets, titles, empty states, entrance animations |
 | 🪶 **No dependencies** | Pure Flutter `CustomPainter` — nothing else pulled into your app |
 
@@ -59,7 +72,7 @@ labels, colors and a value formatter.
 
 ```yaml
 dependencies:
-  flutter_charts_kit: ^0.1.0
+  flutter_charts_kit: ^0.2.0
 ```
 
 ## Usage
@@ -196,11 +209,20 @@ takes `fitToSize: false` to restore the old fixed scale.
 
 ## Example
 
-`example/lib/simple_3d_demo.dart` — hardcoded data, no networking, ~40
-lines. Run with `flutter run -t lib/simple_3d_demo.dart`.
+**[Try the live demo](https://flutter-charts-kit-gap4-flame.vercel.app/)**, or run
+it yourself with `flutter run` inside `example/`. It's a three-tab showcase
+(dark by default, with a light/dark toggle):
 
-`example/lib/charts_2d_demo.dart` — all four 2D chart types (line, bar,
-pie/donut, scatter) with theming, titles, and drag-to-zoom.
+- **2D charts:** line, area, bar, combo, pie, scatter, plus a streaming
+  live sensor, a 100,000-point series, and `ChartController` export.
+- **3D:** surface, wireframe with contours, 3D bars and 3D scatter.
+- **More charts:** a live trading chart (ticks every 250ms, indicators,
+  eye toggles), heatmap, radar, gauges, histogram, box plot, funnel,
+  treemap, Sankey and sparkline KPI cards.
+
+Two minimal single-file demos are there too:
+`flutter run -t lib/simple_3d_demo.dart` (one 3D surface, ~40 lines) and
+`flutter run -t lib/charts_2d_demo.dart` (the four core 2D charts).
 
 ## What's generic vs. what's app-specific
 
@@ -214,9 +236,9 @@ pie/donut, scatter) with theming, titles, and drag-to-zoom.
 
 ## 2D chart types
 
-Beyond the 3D surface, the package also includes four standard 2D chart
-types, all sharing the same series-based API and a toggleable legend
-(tap a legend entry to hide/show that series or slice — like Highcharts).
+The core 2D charts (line, bar, pie/donut and scatter) share the same
+series-based API and a toggleable legend (tap a legend entry to hide/show
+that series or slice, like Highcharts).
 
 ```dart
 // Line chart, optionally filled
@@ -372,6 +394,54 @@ LineChart2D(
 - Charts compare data by value, so rebuilding with an equal list does
   nothing; pass a new list (e.g. `List.of(readings)`) when data changes.
 
+### Log scales, 100% stacking, labels and annotations
+
+```dart
+LineChart2D(
+  yAxisScale: ChartAxisScale.logarithmic,  // powers of ten get equal space
+  showValueLabels: true,                   // value above each point
+  annotations: [ChartAnnotation(x: 4, y: 1800, text: 'Launch')],
+  ...,
+)
+
+BarChart2D(percentStacked: true, showValueLabels: true, ...)   // 0–100% shares
+LineChart2D(percentStacked: true, filled: true, ...)           // 100% stacked area
+ScatterChart2D(xAxisScale: ChartAxisScale.logarithmic, showPointLabels: true, ...)
+```
+
+Log axes show only positive values. With `percentStacked`, tooltips and
+callbacks still report each value's real number alongside its share.
+`ChartAnnotation` works on line, scatter, bar, combo and candlestick charts
+(`x` is the category index for bar/combo, `ChartAnnotation.at(DateTime)`
+for time axes and candles).
+
+### Linked crosshairs
+
+```dart
+final sync = ChartCrosshairSync();
+
+Column(children: [
+  Expanded(child: CandlestickChart2D(crosshairSync: sync, candles: candles)),
+  Expanded(child: LineChart2D(crosshairSync: sync, xAxisType: ChartAxisType.time, series: [...])),
+])
+```
+
+Hover one chart and the others show a crosshair at the same x (the nearest
+point is marked on line charts; candlesticks show that candle's values in
+their header; bar and combo charts highlight the category). Linked charts
+must share x units: data x, epoch milliseconds for time axes and
+candlesticks, or category index for bar/combo.
+
+### SVG export
+
+```dart
+final String? svg = controller.toSvg(background: Colors.white);
+```
+
+Vector output for reports and print: shapes, text, clipping and
+backgrounds are exported; gradients and images are not, and curves become
+fine polylines.
+
 ### Legend position and custom tooltips
 
 ```dart
@@ -438,6 +508,93 @@ scroll wheel on desktop) zooms.
 Every chart's zoom uses the same reset-button pattern: it only appears
 while zoomed, and tapping it restores the exact original view.
 
+## Business charts
+
+```dart
+// Bridge from a starting value through changes; totals show the running sum
+WaterfallChart2D(steps: [
+  WaterfallStep(label: 'Revenue', value: 420),
+  WaterfallStep(label: 'COGS', value: -180),
+  WaterfallStep.total('Gross'),
+  WaterfallStep(label: 'Opex', value: -110),
+  WaterfallStep.total('Net'),
+])
+
+// A KPI against its target over qualitative bands — stack several in a Column
+BulletChart(label: 'Revenue', value: 270, target: 250,
+    ranges: [BulletRange(150), BulletRange(225), BulletRange(300)])
+
+// One cell per day, GitHub-style
+CalendarHeatmap(values: {DateTime(2026, 3, 2): 4, DateTime(2026, 3, 3): 9})
+
+// Hierarchy as rings (same TreemapNode as the treemap); tap to drill down
+SunburstChart2D(nodes: [TreemapNode(label: 'Eng', children: [...])])
+
+// Rose (wedge per category) or radial bars (ring per category)
+PolarBarChart2D(categories: [...], series: [...], style: PolarBarStyle.rose)
+
+// Low–high ranges: floating bars, dumbbells, error bars or a shaded band
+RangeChart2D(categories: [...], style: RangeChartStyle.dumbbell, series: [
+  RangeSeries(name: 'Salary', color: Colors.indigo, values: [RangeValue(92, 104)]),
+])
+
+// Lollipop style for any bar chart
+BarChart2D(barStyle: BarStyle.lollipop, ...)
+
+// Tasks over time with progress, milestones and dependency arrows
+GanttChart2D(tasks: [
+  GanttTask(id: 'design', label: 'Design', start: d1, end: d2, progress: 1),
+  GanttTask(id: 'build', label: 'Build', start: d2, end: d3, dependsOn: ['design']),
+  GanttTask.milestone(label: 'Launch', at: d3, dependsOn: ['build']),
+])
+```
+
+For dumbbells, `RangeValue(from, to)` draws `from` faded and `to` solid,
+so the direction of change reads at a glance. The Gantt chart scrolls by
+drag and zooms by pinch or mouse wheel.
+
+## Graphs and maps
+
+```dart
+// Force-directed network: drag nodes, pan, pinch/scroll to zoom
+NetworkGraph2D(
+  directed: true,
+  nodes: [GraphNode(id: 'web', group: 'clients'), GraphNode(id: 'api', group: 'core')],
+  edges: [GraphEdge('web', 'api')],
+)
+
+// Flows between groups; matrix[from][to]
+ChordChart2D(labels: ['Free', 'Pro', 'Team'], matrix: [
+  [0, 42, 4],
+  [6, 0, 17],
+  [1, 5, 0],
+])
+
+// Many measures per item; drag along an axis to filter, tap it to clear
+ParallelCoordinatesChart2D(
+  axes: [ParallelAxis('Price'), ParallelAxis('MPG'), ParallelAxis('Weight', inverted: true)],
+  records: [ParallelRecord([24, 36, 1.3], label: 'Civic', group: 'Compact')],
+  onSelectionChanged: (matching) => ...,
+)
+
+// Regions shaded by value, from GeoJSON you supply
+final features = GeoFeature.parse(await rootBundle.loadString('assets/india_states.geojson'));
+ChoroplethMap2D(
+  features: features,                 // id = properties['name'] (see idProperty)
+  values: {'Karnataka': 67.6, 'Kerala': 35.7},
+  logScale: false,
+  projection: MapProjection.mercator,
+)
+```
+
+The package bundles **no map data**, so it stays small and works for any
+country, state or district level: pass any GeoJSON `FeatureCollection` of
+Polygon/MultiPolygon features. The example app uses
+[Natural Earth](https://www.naturalearthdata.com/)'s public-domain 1:110m
+countries (`example/assets/world_110m.geojson`). The network graph runs a
+small physics simulation; pass `enableAnimation: false` to compute the
+layout up front (deterministic — handy for tests and screenshots).
+
 ## Trading chart
 
 ```dart
@@ -492,6 +649,84 @@ ListenableBuilder(
   `showIndicatorToggles: false`.
 - The indicator math is available directly: `RsiIndicator().compute(candles)`.
 
+### Candle types, volume profile and drawing tools
+
+```dart
+final drawings = ChartDrawingController();
+
+CandlestickChart2D(
+  candles: candles,
+  candleType: CandleType.heikinAshi,       // or renko (renkoBoxSize:), lineBreak (lineBreakCount:)
+  volumeProfile: const VolumeProfile(),     // volume at price, POC and 70% value area
+  drawingController: drawings,
+)
+
+// From your toolbar:
+drawings.startDrawing(DrawingTool.trendLine); // also ray, horizontalLine, fibonacci, rectangle
+drawings.removeSelected();
+final saved = jsonEncode(drawings.toJson());  // persist per symbol…
+drawings.loadJson(jsonDecode(saved));         // …and restore
+```
+
+- **Candle types:** indicators, volume and the O/H/L/C header follow the
+  transformed bars; the last-price tag keeps the real price. Renko's box
+  size defaults to a round number near the 14-period ATR. The transforms
+  are public: `CandleTransforms.heikinAshi(candles)`.
+- **Volume profile** covers the candles in view, so it updates as you
+  scroll and zoom. `VolumeProfileResult.compute` gives you the numbers.
+- **Drawing:** with a tool armed, drag from the first point to the second,
+  or click once for each (a horizontal level takes one click). Without a
+  tool, tap a drawing to select it, drag a handle to reshape it or the line
+  to move it; Delete/Backspace removes it, Escape cancels. Points are stored
+  as time + price, so drawings stay put through zoom, scroll and live
+  updates, and can extend into the future.
+
+## Options
+
+```dart
+// Payoff of a strategy: expiry (filled) and today (Black-Scholes) curves
+OptionPayoffChart2D(
+  spot: 24480,
+  daysToExpiry: 6,
+  volatility: 0.13,                  // for legs without their own iv:
+  legs: [
+    OptionLeg.put(strike: 24200, premium: 18, quantity: 1, lotSize: 75),
+    OptionLeg.put(strike: 24300, premium: 34, quantity: -1, lotSize: 75),
+    OptionLeg.call(strike: 24700, premium: 30, quantity: -1, lotSize: 75),
+    OptionLeg.call(strike: 24800, premium: 15, quantity: 1, lotSize: 75),
+  ],
+)
+
+// Calls vs puts per strike, with spot, max pain and PCR; scrolls sideways
+OpenInterestChart2D(spot: 24480, strikes: [
+  OptionStrikeData(strike: 24500, callOI: 8.2e6, putOI: 6.1e6, callOIChange: 9e5, putOIChange: -2e5),
+  ...
+], view: OpenInterestView.change)   // or .total
+
+// Order book as cumulative bids/asks; pass new lists as it updates
+MarketDepthChart2D(bids: [DepthLevel(24479.5, 300), ...], asks: [DepthLevel(24480.5, 450), ...])
+
+// Implied volatility by strike, one curve per expiry
+VolatilitySmileChart2D(spot: 24480, smiles: [
+  VolatilitySmile(label: 'Weekly', color: Colors.indigo, points: {24000: 0.168, 24500: 0.131, 25000: 0.142}),
+])
+```
+
+The maths is public and dependency-free:
+
+```dart
+OptionMath.blackScholes(type: OptionType.call, spot: 24480, strike: 24500, years: 6 / 365, volatility: 0.13);
+OptionMath.greeks(...);                // delta, gamma, theta (per day), vega, rho (per 1%)
+OptionMath.impliedVolatility(price: 182, type: OptionType.call, spot: 24480, strike: 24500, years: 6 / 365);
+OptionMath.breakevens(legs); OptionMath.maxProfit(legs); OptionMath.maxLoss(legs); // null = unlimited
+OptionMath.maxPain([(strike, callOI, putOI), ...]);
+```
+
+Payoff details: `quantity` is signed (negative = sell), `lotSize` scales
+the P&L, `OptionLeg.underlying(price:)` adds a stock/future leg, and legs
+with a later `daysToExpiry` (calendars) keep their time value at the near
+expiry. Black-Scholes assumes European options with no dividends.
+
 ## More chart types
 
 All of these share the same theming, titles, empty states, tooltips
@@ -541,7 +776,8 @@ need the binning or quartiles yourself.
 ### Not included yet
 
 This is a small, purpose-built library, not a Highcharts clone. Things it
-does **not** do (yet): log scales and stacked percentage bars.
+does **not** do (yet): log scales on bar charts, SVG export of the 3D charts,
+or map tiles (choropleth maps draw your GeoJSON shapes only).
 
 ### Accessibility
 

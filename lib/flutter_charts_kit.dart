@@ -20,6 +20,7 @@ export 'src/chart2d/models.dart'
         LegendEntry,
         ChartAxisType,
         ChartUpdateAnimation,
+        ChartAxisScale,
         ChartPointCallback,
         ChartBarCallback,
         ChartSliceCallback,
@@ -32,10 +33,11 @@ export 'src/chart2d/chart_chrome.dart' show ChartHeader, ChartEmptyState;
 export 'src/chart2d/zoom.dart' show ChartZoomMode, ChartZoomWindow;
 export 'src/chart2d/common.dart' show ChartLegendPosition;
 export 'src/chart2d/controller.dart' show ChartController;
-export 'src/chart2d/reference.dart' show ChartReferenceLine, ChartReferenceBand, ChartReferenceAxis;
+export 'src/chart2d/crosshair_sync.dart' show ChartCrosshairSync;
+export 'src/chart2d/reference.dart' show ChartReferenceLine, ChartReferenceBand, ChartReferenceAxis, ChartAnnotation;
 export 'src/chart2d/curves.dart' show LineChartCurve;
 export 'src/chart2d/line_chart.dart' show LineChart2D;
-export 'src/chart2d/bar_chart.dart' show BarChart2D;
+export 'src/chart2d/bar_chart.dart' show BarChart2D, BarStyle;
 export 'src/chart2d/pie_chart.dart' show PieChart2D;
 export 'src/chart2d/scatter_chart.dart' show ScatterChart2D;
 export 'src/chart2d/combo_chart.dart' show ComboChart2D, ComboSeries, ComboSeriesType, ComboTooltipBuilder;
@@ -61,3 +63,22 @@ export 'src/chart2d/distribution_charts.dart' show Histogram2D, HistogramBin, Bo
 export 'src/chart2d/funnel_chart.dart' show FunnelChart2D, FunnelStage;
 export 'src/chart2d/treemap_chart.dart' show TreemapChart2D, TreemapNode, TreemapTile;
 export 'src/chart2d/sankey_chart.dart' show SankeyChart2D, SankeyLink, SankeyNode, SankeyHit;
+export 'src/chart2d/waterfall_chart.dart' show WaterfallChart2D, WaterfallStep, WaterfallBar;
+export 'src/chart2d/bullet_chart.dart' show BulletChart, BulletRange;
+export 'src/chart2d/calendar_heatmap.dart' show CalendarHeatmap, CalendarDay;
+export 'src/chart2d/sunburst_chart.dart' show SunburstChart2D, SunburstSegment;
+export 'src/chart2d/polar_chart.dart' show PolarBarChart2D, PolarBarStyle, PolarBarHit;
+export 'src/chart2d/range_chart.dart' show RangeChart2D, RangeSeries, RangeValue, RangeChartStyle, RangeHit;
+export 'src/chart2d/gantt_chart.dart' show GanttChart2D, GanttTask;
+export 'src/chart2d/network_graph.dart' show NetworkGraph2D, GraphNode, GraphEdge;
+export 'src/chart2d/chord_chart.dart' show ChordChart2D, ChordHit;
+export 'src/chart2d/parallel_coordinates.dart' show ParallelCoordinatesChart2D, ParallelAxis, ParallelRecord;
+export 'src/chart2d/choropleth_map.dart' show ChoroplethMap2D, GeoFeature, MapProjection;
+export 'src/chart2d/option_math.dart' show OptionMath, OptionLeg, OptionType, OptionGreeks;
+export 'src/chart2d/option_payoff_chart.dart' show OptionPayoffChart2D;
+export 'src/chart2d/open_interest_chart.dart' show OpenInterestChart2D, OptionStrikeData, OpenInterestView;
+export 'src/chart2d/market_depth_chart.dart' show MarketDepthChart2D, DepthLevel, DepthHit;
+export 'src/chart2d/volatility_smile_chart.dart' show VolatilitySmileChart2D, VolatilitySmile;
+export 'src/chart2d/candle_types.dart' show CandleType, CandleTransforms;
+export 'src/chart2d/volume_profile.dart' show VolumeProfile, VolumeProfileResult, VolumeProfileBin;
+export 'src/chart2d/chart_drawings.dart' show ChartDrawingController, ChartDrawing, DrawingPoint, DrawingTool;

@@ -3,6 +3,9 @@ import 'package:flutter_charts_kit/flutter_charts_kit.dart';
 import 'more_charts.dart';
 import 'specialty_charts.dart';
 import 'three_d_page.dart';
+import 'business_charts.dart';
+import 'advanced_charts.dart';
+import 'options_charts.dart';
 
 void main() => runApp(const ChartsDemoApp());
 
@@ -102,7 +105,7 @@ class ChartsDemoScreen extends StatelessWidget {
     final isMobile = Responsive.isMobile(context);
 
     return DefaultTabController(
-      length: 3,
+      length: 6,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Flutter Charts Kit'),
@@ -116,6 +119,8 @@ class ChartsDemoScreen extends StatelessWidget {
             ),
           ],
           bottom: TabBar(
+            isScrollable: isMobile,
+            tabAlignment: isMobile ? TabAlignment.start : null,
             tabs: [
               Tab(
                 icon: const Icon(Icons.bar_chart),
@@ -129,6 +134,18 @@ class ChartsDemoScreen extends StatelessWidget {
                 icon: const Icon(Icons.dashboard_customize_outlined),
                 text: isMobile ? 'More' : 'More charts',
               ),
+              const Tab(
+                icon: Icon(Icons.business_center_outlined),
+                text: 'Business',
+              ),
+              Tab(
+                icon: const Icon(Icons.hub_outlined),
+                text: isMobile ? 'Graphs' : 'Graphs & maps',
+              ),
+              Tab(
+                icon: const Icon(Icons.candlestick_chart_outlined),
+                text: isMobile ? 'Options' : 'Options & trading',
+              ),
             ],
           ),
         ),
@@ -137,6 +154,9 @@ class ChartsDemoScreen extends StatelessWidget {
             Charts2DPage(),
             Surface3DPage(),
             SpecialtyChartsPage(),
+            BusinessChartsPage(),
+            AdvancedChartsPage(),
+            OptionsChartsPage(),
           ],
         ),
       ),
@@ -254,6 +274,20 @@ class Charts2DPage extends StatelessWidget {
         SizedBox(
           height: chartHeight,
           child: const BigDataDemo(),
+        ),
+
+        const SizedBox(height: 24),
+
+        SizedBox(
+          height: chartHeight * 1.6,
+          child: const SyncedChartsDemo(),
+        ),
+
+        const SizedBox(height: 24),
+
+        SizedBox(
+          height: isMobile ? chartHeight * 2 : chartHeight,
+          child: const LogAndPercentDemo(),
         ),
 
         const SizedBox(height: 24),

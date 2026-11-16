@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'svg_export.dart';
 import 'theme.dart';
 import 'zoom.dart';
 import 'chart_chrome.dart';
@@ -261,7 +262,7 @@ TextPainter layoutChartText(
   double? maxWidth,
   TextAlign textAlign = TextAlign.left,
 }) {
-  return TextPainter(
+  return ChartTextPainter(
     text: TextSpan(
       text: text,
       style: TextStyle(color: color, fontSize: fontSize, fontWeight: fontWeight, fontFamily: fontFamily),

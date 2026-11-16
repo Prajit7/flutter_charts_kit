@@ -16,6 +16,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_charts_kit/flutter_charts_kit.dart';
 
+// Reuses the example app's demo data (the example is a separate package).
+// ignore: avoid_relative_lib_imports
+import '../example/lib/advanced_charts.dart' show networkDemo, chordDemo, parallelDemo, formatPopulation;
+// ignore: avoid_relative_lib_imports
+import '../example/lib/options_charts.dart';
+
 Future<void> _loadFonts() async {
   final root = Platform.environment['FLUTTER_ROOT'] ?? '';
   final dir = '$root/bin/cache/artifacts/material_fonts';
@@ -344,6 +350,134 @@ void main() {
     tester.view.reset();
   });
 
+  testWidgets('Business charts', (tester) async {
+    final rnd = math.Random(3);
+    await _shoot(
+      tester,
+      'business.png',
+      _gallery('Business charts', 3, [
+        const WaterfallChart2D(
+          title: 'Revenue to net profit',
+          enableAnimation: false,
+          steps: [
+            WaterfallStep(label: 'Revenue', value: 420),
+            WaterfallStep(label: 'COGS', value: -180),
+            WaterfallStep.total('Gross'),
+            WaterfallStep(label: 'Opex', value: -110),
+            WaterfallStep(label: 'Other', value: 18),
+            WaterfallStep(label: 'Tax', value: -32),
+            WaterfallStep.total('Net'),
+          ],
+        ),
+        Column(children: [
+          const ChartHeader(title: 'KPIs vs target'),
+          for (final (label, sub, v, t) in [
+            ('Revenue', 'USD k', 270.0, 250.0),
+            ('Profit', '%', 22.0, 26.0),
+            ('NPS', 'score', 48.0, 40.0),
+          ])
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: BulletChart(
+                  label: label,
+                  sublabel: sub,
+                  value: v,
+                  target: t,
+                  enableAnimation: false,
+                  barColor: const Color(0xFF3949AB),
+                  ranges: [BulletRange(t * 0.6), BulletRange(t * 0.9), BulletRange(t * 1.2)],
+                ),
+              ),
+            ),
+        ]),
+        CalendarHeatmap(
+          title: 'Trading days',
+          start: DateTime(2026, 1, 1),
+          end: DateTime(2026, 6, 30),
+          values: {
+            for (int d = 0; d < 181; d++)
+              if (rnd.nextDouble() > 0.25) DateTime(2026, 1, 1 + d): (rnd.nextDouble() * 10).roundToDouble(),
+          },
+        ),
+        const SunburstChart2D(
+          title: 'Budget',
+          enableAnimation: false,
+          nodes: [
+            TreemapNode(label: 'Engineering', children: [
+              TreemapNode(label: 'Salaries', value: 820),
+              TreemapNode(label: 'Cloud', children: [
+                TreemapNode(label: 'Compute', value: 150),
+                TreemapNode(label: 'Storage', value: 90),
+              ]),
+              TreemapNode(label: 'Tools', value: 90),
+            ]),
+            TreemapNode(label: 'Marketing', children: [
+              TreemapNode(label: 'Ads', value: 300),
+              TreemapNode(label: 'Events', value: 120),
+            ]),
+            TreemapNode(label: 'Sales', value: 380),
+            TreemapNode(label: 'Office', value: 150),
+          ],
+        ),
+        const PolarBarChart2D(
+          title: 'Orders by hour',
+          enableAnimation: false,
+          categories: ['0', '2', '4', '6', '8', '10', '12', '14', '16', '18', '20', '22'],
+          series: [
+            CategorySeries(name: 'Online', color: Color(0xFF3949AB), values: [8, 4, 2, 5, 18, 30, 34, 31, 28, 36, 30, 18]),
+            CategorySeries(name: 'Store', color: Color(0xFF26A69A), values: [0, 0, 0, 2, 10, 22, 26, 24, 20, 14, 4, 0]),
+          ],
+        ),
+        const PolarBarChart2D(
+          title: 'Goal progress',
+          style: PolarBarStyle.radial,
+          max: 100,
+          enableAnimation: false,
+          showLegend: false,
+          categories: ['Sales', 'Leads', 'Retention', 'NPS'],
+          series: [CategorySeries(name: 'Progress', color: Color(0xFF00897B), values: [86, 64, 92, 48])],
+        ),
+        RangeChart2D(
+          title: 'Temperature range',
+          style: RangeChartStyle.bar,
+          enableAnimation: false,
+          categories: const ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'],
+          series: [
+            RangeSeries(name: 'Range', color: const Color(0xFFF4511E), values: [
+              for (final (lo, hi) in [(14.0, 29.0), (16.0, 31.0), (19.0, 34.0), (23.0, 37.0), (25.0, 38.0), (24.0, 33.0), (23.0, 30.0), (22.0, 30.0)])
+                RangeValue(lo, hi),
+            ]),
+          ],
+        ),
+        const RangeChart2D(
+          title: 'Salary: 2025 to 2026',
+          style: RangeChartStyle.dumbbell,
+          enableAnimation: false,
+          categories: ['Eng', 'Design', 'Sales', 'Ops', 'Support'],
+          series: [
+            RangeSeries(name: 'Change', color: Color(0xFF3949AB), values: [
+              RangeValue(92, 104), RangeValue(78, 83), RangeValue(70, 81), RangeValue(64, 66), RangeValue(52, 58),
+            ]),
+          ],
+        ),
+        GanttChart2D(
+          title: 'Release plan',
+          today: DateTime(2026, 3, 24),
+          tasks: [
+            GanttTask(id: 'spec', label: 'Spec', group: 'Plan', start: DateTime(2026, 3, 2), end: DateTime(2026, 3, 9), progress: 1),
+            GanttTask(id: 'design', label: 'Design', group: 'Plan', start: DateTime(2026, 3, 6), end: DateTime(2026, 3, 18), progress: 1, dependsOn: const ['spec']),
+            GanttTask(id: 'api', label: 'API', group: 'Build', start: DateTime(2026, 3, 16), end: DateTime(2026, 4, 3), progress: 0.6, dependsOn: const ['design']),
+            GanttTask(id: 'app', label: 'App', group: 'Build', start: DateTime(2026, 3, 19), end: DateTime(2026, 4, 10), progress: 0.3, dependsOn: const ['design']),
+            GanttTask(id: 'qa', label: 'QA', group: 'Ship', start: DateTime(2026, 4, 6), end: DateTime(2026, 4, 15), dependsOn: const ['api', 'app']),
+            GanttTask.milestone(label: 'Launch', group: 'Ship', at: DateTime(2026, 4, 16), dependsOn: const ['qa']),
+          ],
+        ),
+      ]),
+      const Size(1500, 1100),
+    );
+  });
+
   testWidgets('More charts', (tester) async {
     final rnd = math.Random(7);
     var price = 100.0;
@@ -471,6 +605,53 @@ void main() {
         ),
       ]),
       const Size(1500, 1100),
+    );
+  });
+
+  testWidgets('Graphs and maps', (tester) async {
+    final features = GeoFeature.parse(File('example/assets/world_110m.geojson').readAsStringSync())
+        .where((f) => f.id != 'Antarctica')
+        .toList();
+    await _shoot(
+      tester,
+      'graphs_maps.png',
+      _gallery('Graphs and maps', 2, [
+        ChoroplethMap2D(
+          title: 'World population (log scale)',
+          features: features,
+          logScale: true,
+          values: {
+            for (final f in features)
+              if (f.properties['pop'] is num) f.id: (f.properties['pop'] as num) / 1e6,
+          },
+          valueFormatter: formatPopulation,
+        ),
+        networkDemo(animate: false),
+        chordDemo(animate: false),
+        parallelDemo(),
+      ]),
+      const Size(1500, 1100),
+    );
+  });
+
+  testWidgets('Options and trading', (tester) async {
+    await _shoot(
+      tester,
+      'options.png',
+      _gallery('Options and trading', 2, [
+        const PayoffDemo(animate: false),
+        oiDemo(),
+        const LiveDepthDemo(live: false),
+        smileDemo(),
+        const TradingToolsDemo(animate: false),
+        CandlestickChart2D(
+          title: 'Renko (auto box size)',
+          candles: sampleCandles(),
+          candleType: CandleType.renko,
+          enableAnimation: false,
+        ),
+      ]),
+      const Size(1500, 1500),
     );
   });
 }

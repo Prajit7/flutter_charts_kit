@@ -63,6 +63,17 @@ class _TimeSeriesDemoState extends State<TimeSeriesDemo> {
               icon: const Icon(Icons.image_outlined, size: 18),
               label: const Text('Export PNG'),
             ),
+            TextButton.icon(
+              onPressed: () {
+                final svg = _controller.toSvg(background: Theme.of(context).colorScheme.surface);
+                if (svg == null) return;
+                // A real app would save or share this text; the demo reports its size.
+                ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Exported SVG (${(svg.length / 1024).toStringAsFixed(1)} KB of vector markup)')));
+              },
+              icon: const Icon(Icons.polyline_outlined, size: 18),
+              label: const Text('Export SVG'),
+            ),
           ],
         ),
         Expanded(
@@ -250,5 +261,105 @@ class BigDataDemo extends StatelessWidget {
       showLegend: false,
       series: _series,
     );
+  }
+}
+
+/// Two charts with linked crosshairs: hover one and the other follows.
+class SyncedChartsDemo extends StatefulWidget {
+  const SyncedChartsDemo({super.key});
+
+  @override
+  State<SyncedChartsDemo> createState() => _SyncedChartsDemoState();
+}
+
+class _SyncedChartsDemoState extends State<SyncedChartsDemo> {
+  final _sync = ChartCrosshairSync();
+  static final _start = DateTime(2026, 1, 5);
+  static final _revenue = [
+    for (int d = 0; d < 60; d++) ChartPoint.at(_start.add(Duration(days: d)), y: 120 + d * 1.6 + 18 * math.sin(d / 5)),
+  ];
+  static final _margin = [
+    for (int d = 0; d < 60; d++) ChartPoint.at(_start.add(Duration(days: d)), y: 22 + 6 * math.cos(d / 7) + d * 0.05),
+  ];
+
+  @override
+  void dispose() {
+    _sync.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(children: [
+      Expanded(
+        child: LineChart2D(
+          title: 'Linked charts',
+          subtitle: 'Hover either chart — the other follows (ChartCrosshairSync)',
+          crosshairSync: _sync,
+          xAxisType: ChartAxisType.time,
+          curve: LineChartCurve.smooth,
+          showPoints: false,
+          showLegend: false,
+          filled: true,
+          annotations: [ChartAnnotation.at(_start.add(const Duration(days: 33)), y: _revenue[33].y, text: 'Price change')],
+          series: [XySeries(name: 'Revenue (k)', color: Colors.indigo, data: _revenue)],
+        ),
+      ),
+      Expanded(
+        child: LineChart2D(
+          crosshairSync: _sync,
+          xAxisType: ChartAxisType.time,
+          curve: LineChartCurve.smooth,
+          showPoints: false,
+          showLegend: false,
+          yTickFormatter: (v) => '${v.round()}%',
+          series: [XySeries(name: 'Margin', color: Colors.teal, data: _margin)],
+        ),
+      ),
+    ]);
+  }
+}
+
+class LogAndPercentDemo extends StatelessWidget {
+  const LogAndPercentDemo({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final wide = MediaQuery.sizeOf(context).width >= 700;
+    final charts = [
+      const LineChart2D(
+        title: 'Users (log scale)',
+        subtitle: 'Each power of ten gets equal space',
+        yAxisScale: ChartAxisScale.logarithmic,
+        showValueLabels: true,
+        showLegend: false,
+        referenceLines: [ChartReferenceLine.y(1000, label: 'Goal')],
+        series: [
+          XySeries(name: 'Users', color: Colors.indigo, data: [
+            ChartPoint(x: 0, y: 12, label: 'Jan'),
+            ChartPoint(x: 1, y: 40, label: 'Feb'),
+            ChartPoint(x: 2, y: 95, label: 'Mar'),
+            ChartPoint(x: 3, y: 420, label: 'Apr'),
+            ChartPoint(x: 4, y: 1800, label: 'May'),
+            ChartPoint(x: 5, y: 5200, label: 'Jun'),
+          ]),
+        ],
+      ),
+      const BarChart2D(
+        title: 'Channel mix (100% stacked)',
+        subtitle: 'Shares per quarter; tooltips show real values',
+        percentStacked: true,
+        showValueLabels: true,
+        categories: ['Q1', 'Q2', 'Q3', 'Q4'],
+        series: [
+          CategorySeries(name: 'Web', color: Colors.blue, values: [40, 55, 60, 70]),
+          CategorySeries(name: 'App', color: Colors.teal, values: [30, 30, 45, 60]),
+          CategorySeries(name: 'Store', color: Colors.orange, values: [30, 15, 15, 20]),
+        ],
+      ),
+    ];
+    return wide
+        ? Row(children: [for (final c in charts) Expanded(child: c)])
+        : Column(children: [for (final c in charts) Expanded(child: c)]);
   }
 }

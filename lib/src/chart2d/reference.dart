@@ -1,5 +1,8 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'cartesian_axes.dart';
+import 'common.dart';
+import 'theme.dart';
 
 /// Which data axis a reference line/band is measured along.
 enum ChartReferenceAxis {
@@ -148,5 +151,73 @@ class ReferencePainter {
             color: color, alignRight: line.axis == ChartReferenceAxis.y, alignBottom: line.axis == ChartReferenceAxis.y);
       }
     }
+  }
+}
+
+/// A callout pinned to a data point: a small labelled box joined to the
+/// point by a leader line — "Launch", "All-time high", "Outage".
+///
+/// ```dart
+/// LineChart2D(
+///   annotations: [ChartAnnotation(x: 6, y: 182, text: 'Record month')],
+///   ...
+/// )
+/// ```
+///
+/// [x] is in the chart's x units: data x for line/scatter, the category
+/// index for bar/combo, milliseconds since epoch for time axes and
+/// candlesticks (see [ChartAnnotation.at]). Annotations whose point is out
+/// of view aren't drawn.
+class ChartAnnotation {
+  final double x;
+  final double y;
+  final String text;
+
+  /// Leader line, dot and border color; defaults to the theme's axis color.
+  final Color? color;
+
+  /// Where the box sits relative to the point, in pixels (default: above).
+  final Offset offset;
+
+  const ChartAnnotation({required this.x, required this.y, required this.text, this.color, this.offset = const Offset(0, -36)});
+
+  /// An annotation at [time] on a time axis or candlestick chart.
+  ChartAnnotation.at(DateTime time, {required this.y, required this.text, this.color, this.offset = const Offset(0, -36)})
+      : x = time.millisecondsSinceEpoch.toDouble();
+}
+
+/// Draws [ChartAnnotation]s; [project] maps an annotation's (x, y) to the
+/// screen, or returns null when it's out of view.
+void paintAnnotations(
+  Canvas canvas,
+  List<ChartAnnotation> annotations,
+  Offset? Function(ChartAnnotation a) project,
+  Rect bounds,
+  ChartTheme theme,
+) {
+  for (final a in annotations) {
+    final p = project(a);
+    if (p == null || !bounds.inflate(1).contains(p)) continue;
+    final color = a.color ?? theme.axisColor;
+    final tp = layoutChartText(a.text, color: theme.tooltipTextColor, fontSize: 11, fontFamily: theme.fontFamily, maxWidth: 180);
+    final w = tp.width + 12, h = tp.height + 8;
+    // Centre the box on the offset point, kept inside the plot.
+    final c = p + a.offset;
+    final left = (c.dx - w / 2).clamp(bounds.left, math.max(bounds.left, bounds.right - w)).toDouble();
+    final top = (c.dy - h / 2).clamp(bounds.top, math.max(bounds.top, bounds.bottom - h)).toDouble();
+    final box = Rect.fromLTWH(left, top, w, h);
+    // Leader from the point to the nearest point on the box's edge.
+    final edge = Offset(p.dx.clamp(box.left, box.right), p.dy.clamp(box.top, box.bottom));
+    canvas.drawLine(p, edge, Paint()
+      ..color = color
+      ..strokeWidth = 1);
+    canvas.drawCircle(p, 3.5, Paint()..color = color);
+    final rr = RRect.fromRectAndRadius(box, const Radius.circular(4));
+    canvas.drawRRect(rr, Paint()..color = theme.tooltipBackgroundColor);
+    canvas.drawRRect(rr, Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1
+      ..color = color);
+    tp.paint(canvas, box.topLeft + const Offset(6, 4));
   }
 }
